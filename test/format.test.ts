@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
-import { formatDuration, formatUsageStatus } from "../src/format.ts";
+import { formatDuration, formatUsageDetails, formatUsageStatus } from "../src/format.ts";
 import type { UsageSnapshot } from "../src/types.ts";
 
 const now = 1_900_000_000_000;
@@ -57,6 +57,17 @@ test("formats Z.AI monthly tools quota with icon and count", () => {
   assert.match(
     formatUsageStatus(zai, { ...DEFAULT_CONFIG, color: false, toolsLabel: "text" }, { now }),
     /\| tools 4% \(42\/1000\)/,
+  );
+});
+
+test("formats detailed usage for /usage", () => {
+  assert.equal(
+    formatUsageDetails(snapshot, { ...DEFAULT_CONFIG, color: false }, now),
+    [
+      "Codex teams (Team) usage",
+      "Five-hour: 32% used · resets in 2h14m",
+      "Weekly: 84% used · resets in 23h",
+    ].join("\n"),
   );
 });
 

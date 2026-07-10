@@ -64,12 +64,12 @@ pi remove npm:@narumitw/pi-codex-usage
 ## Commands
 
 ```text
-/usage-status
-/usage-status refresh
-/usage-status config
+/usage
+/usage refresh
+/usage config
 ```
 
-First two refresh immediately. `config` reloads configuration from disk.
+`/usage` refreshes and shows detailed usage for active provider. `refresh` does same explicitly. `config` reloads configuration from disk before refreshing.
 
 ## Configuration
 

@@ -7,7 +7,7 @@ import {
   readZaiApiKey,
 } from "./auth.ts";
 import { CONFIG_FILE, loadConfig } from "./config.ts";
-import { formatUsageStatus, snapshotKey } from "./format.ts";
+import { formatUsageDetails, formatUsageStatus, snapshotKey } from "./format.ts";
 import type { CodexCredential, UsageSnapshot, UsageStatusConfig } from "./types.ts";
 
 const STATUS_KEY = "usage-status";
@@ -28,7 +28,7 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
   let currentModel: ModelLike;
   let interval: ReturnType<typeof setInterval> | undefined;
   let refreshSequence = 0;
-  let refreshInFlight = false;
+  let refreshPromise: Promise<void> | undefined;
   let refreshQueued = false;
   const cache = new Map<string, UsageSnapshot>();
 
@@ -58,21 +58,23 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
     }
   }
 
-  async function refresh(): Promise<void> {
+  function refresh(): Promise<void> {
     refreshSequence += 1;
-    if (refreshInFlight) {
+    if (refreshPromise) {
       refreshQueued = true;
-      return;
+      return refreshPromise;
     }
-    refreshInFlight = true;
-    try {
-      do {
-        refreshQueued = false;
-        await runRefresh();
-      } while (refreshQueued);
-    } finally {
-      refreshInFlight = false;
-    }
+    refreshPromise = (async () => {
+      try {
+        do {
+          refreshQueued = false;
+          await runRefresh();
+        } while (refreshQueued);
+      } finally {
+        refreshPromise = undefined;
+      }
+    })();
+    return refreshPromise;
   }
 
   async function runRefresh(): Promise<void> {
@@ -166,23 +168,38 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
     currentCtx = undefined;
   });
 
-  pi.registerCommand("usage-status", {
-    description: "Refresh usage status or reload pi-usage-status config",
+  pi.registerCommand("usage", {
+    description: "Show active provider usage, refresh it, or reload usage config",
     handler: async (args, ctx) => {
       currentCtx = ctx as RuntimeContext;
       currentModel = ctx.model;
-      if (args.trim() === "config") {
+      const action = args.trim();
+      if (action === "config") {
         config = loadConfig(agentDir);
         stopTimer();
-        ctx.ui.notify(`Reloaded ${CONFIG_FILE}`, "info");
-      } else if (args.trim() && args.trim() !== "refresh") {
-        ctx.ui.notify("Usage: /usage-status [refresh|config]", "warning");
+      } else if (action && action !== "refresh") {
+        ctx.ui.notify("Usage: /usage [refresh|config]", "warning");
         return;
       }
+
       await refresh();
-      if (!args.trim() || args.trim() === "refresh") ctx.ui.notify("Usage status refreshed", "info");
+      const provider = currentModel?.provider ?? ctx.model?.provider;
+      const snapshot = activeCachedSnapshot(provider);
+      if (!snapshot) {
+        ctx.ui.notify("Usage unavailable for active provider", "warning");
+        return;
+      }
+      const prefix = action === "config" ? `Reloaded ${CONFIG_FILE}\n\n` : "";
+      ctx.ui.notify(prefix + formatUsageDetails(snapshot, config), "info");
     },
   });
+
+  function activeCachedSnapshot(provider: string | undefined): UsageSnapshot | undefined {
+    if (provider === "zai") return cache.get("zai:default");
+    if (provider !== "openai-codex") return undefined;
+    const credential = readActiveCodexCredential(agentDir);
+    return cache.get(`codex:${credential?.accountName ?? "default"}`);
+  }
 }
 
 interface FetchTask {

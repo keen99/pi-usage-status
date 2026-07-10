@@ -40,6 +40,39 @@ export function formatUsageStatus(
   return options.stale ? `◌ ${text}` : text;
 }
 
+export function formatUsageDetails(
+  snapshot: UsageSnapshot,
+  config: UsageStatusConfig,
+  now = Date.now(),
+): string {
+  const heading = [snapshot.providerLabel];
+  if (snapshot.accountName) heading.push(snapshot.accountName);
+  else if (snapshot.planName) heading.push(formatPlanName(snapshot.planName));
+  const title = snapshot.accountName && snapshot.planName
+    ? `${heading.join(" ")} (${formatPlanName(snapshot.planName)})`
+    : heading.join(" ");
+  const lines = [`${title} usage`];
+
+  for (const limit of snapshot.limits) {
+    const used = clampPercent(limit.usedPercent);
+    const shown = config.percentageStyle === "remaining" ? 100 - used : used;
+    const qualifier = config.percentageStyle === "remaining" ? "remaining" : "used";
+    const label = { "5h": "Five-hour", week: "Weekly", tools: "Tools" }[limit.label];
+    let line = `${label}: ${Math.round(shown)}% ${qualifier}`;
+    if (limit.current !== undefined && limit.total !== undefined) {
+      const current = config.percentageStyle === "remaining"
+        ? Math.max(0, limit.total - limit.current)
+        : limit.current;
+      line += ` (${formatCount(current)}/${formatCount(limit.total)})`;
+    }
+    if (config.showResetTimes && limit.resetsAt) {
+      line += ` · resets in ${formatDuration(limit.resetsAt - now)}`;
+    }
+    lines.push(line);
+  }
+  return lines.join("\n");
+}
+
 export function formatDuration(milliseconds: number): string {
   if (!Number.isFinite(milliseconds) || milliseconds <= 0) return "now";
   const totalMinutes = Math.max(1, Math.floor(milliseconds / 60_000));
