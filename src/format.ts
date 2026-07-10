@@ -1,7 +1,14 @@
 import type { UsageSnapshot, UsageStatusConfig } from "./types.ts";
 
 export interface StatusTheme {
-  fg(color: "success" | "warning" | "error" | "muted", text: string): string;
+  fg(
+    color: "success" | "warning" | "error" | "muted" | "dim" | "accent" | "text",
+    text: string,
+  ): string;
+}
+
+export interface DetailTheme extends StatusTheme {
+  bold(text: string): string;
 }
 
 export function formatUsageStatus(
@@ -44,6 +51,7 @@ export function formatUsageDetails(
   snapshot: UsageSnapshot,
   config: UsageStatusConfig,
   now = Date.now(),
+  theme?: DetailTheme,
 ): string {
   const heading = [snapshot.providerLabel];
   if (snapshot.accountName) heading.push(snapshot.accountName);
@@ -51,31 +59,41 @@ export function formatUsageDetails(
   const title = snapshot.accountName && snapshot.planName
     ? `${heading.join(" ")} (${formatPlanName(snapshot.planName)})`
     : heading.join(" ");
-  const lines = [title, ""];
+  const styledTitle = theme ? theme.fg("accent", theme.bold(title)) : title;
+  const lines = [styledTitle, ""];
 
   for (const limit of snapshot.limits) {
     const remaining = 100 - clampPercent(limit.usedPercent);
-    const label = {
+    const rawLabel = {
       "5h": "5h limit:",
       week: "Weekly limit:",
       tools: "Tools limit:",
     }[limit.label].padEnd(15);
-    let details = `${progressBar(remaining)} ${Math.round(remaining)}% left`;
+    const label = theme ? theme.fg("muted", rawLabel) : rawLabel;
+    const remainingText = `${Math.round(remaining)}% left`;
+    let details = `${progressBar(remaining, theme)} ${theme
+      ? theme.fg(colorForRemainingPercent(remaining), remainingText)
+      : remainingText}`;
     if (limit.current !== undefined && limit.total !== undefined) {
-      details += ` (${formatCount(Math.max(0, limit.total - limit.current))}/${formatCount(limit.total)} left)`;
+      const count = `(${formatCount(Math.max(0, limit.total - limit.current))}/${formatCount(limit.total)} left)`;
+      details += ` ${theme ? theme.fg("text", count) : count}`;
     }
     if (config.showResetTimes && limit.resetsAt) {
-      details += ` (resets ${formatResetAt(limit.resetsAt, now)})`;
+      const reset = `(resets ${formatResetAt(limit.resetsAt, now)})`;
+      details += ` ${theme ? theme.fg("dim", reset) : reset}`;
     }
     lines.push(`  ${label}${details}`);
   }
   return lines.join("\n");
 }
 
-function progressBar(percentRemaining: number): string {
+function progressBar(percentRemaining: number, theme?: DetailTheme): string {
   const width = 20;
   const filled = Math.round((clampPercent(percentRemaining) / 100) * width);
-  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}]`;
+  const full = "█".repeat(filled);
+  const empty = "░".repeat(width - filled);
+  if (!theme) return `[${full}${empty}]`;
+  return `[${theme.fg(colorForRemainingPercent(percentRemaining), full)}${theme.fg("dim", empty)}]`;
 }
 
 function formatResetAt(timestamp: number, nowTimestamp: number): string {
@@ -105,6 +123,12 @@ export function snapshotKey(snapshot: UsageSnapshot): string {
 
 function formatCount(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.0+$|(?<=\.[0-9]*)0+$/, "");
+}
+
+function colorForRemainingPercent(remaining: number): "success" | "warning" | "error" {
+  if (remaining <= 10) return "error";
+  if (remaining <= 25) return "warning";
+  return "success";
 }
 
 function colorForUsedPercent(used: number): "success" | "warning" | "error" {

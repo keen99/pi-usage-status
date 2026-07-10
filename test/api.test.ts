@@ -36,6 +36,26 @@ test("parses Z.AI five-hour and weekly quota", async () => {
   });
 });
 
+test("infers legacy Lite, Pro, and Max from Z.AI quota shape", async () => {
+  for (const tier of ["lite", "pro", "max"] as const) {
+    const snapshot = await fetchZaiUsage("key", {
+      timeoutMs: 1000,
+      fetchFn: jsonFetch({
+        code: 200,
+        data: {
+          level: tier,
+          limits: [
+            { type: "TIME_LIMIT", unit: 5, percentage: 4, currentValue: 42, remaining: 958 },
+            { type: "TOKENS_LIMIT", unit: 3, percentage: 1 },
+          ],
+        },
+      }),
+    });
+    assert.equal(snapshot.planName, `legacy_${tier}`);
+    assert.deepEqual(snapshot.limits.map((limit) => limit.label), ["5h", "tools"]);
+  }
+});
+
 test("parses Codex quota and account label", async () => {
   const snapshot = await fetchCodexUsage(
     { access: "token", accountId: "acct", accountName: "teams" },

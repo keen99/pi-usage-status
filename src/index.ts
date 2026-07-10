@@ -13,6 +13,7 @@ import type { CodexCredential, UsageSnapshot, UsageStatusConfig } from "./types.
 const STATUS_KEY = "usage-status";
 const REPLACED_STATUS_KEYS = ["usage-bars", "codex-usage", "glm-usage"];
 const CODEX_ACCOUNTS_STATUS_KEY = "codex-accounts";
+const RESET_FOREGROUND = "\x1b[39m";
 
 type ModelLike = { provider?: string } | undefined;
 export type RuntimeContext = ExtensionContext & {
@@ -190,11 +191,11 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
         try {
           const snapshot = await task.fetch();
           cache.set(snapshotKey(snapshot), snapshot);
-          return formatUsageDetails(snapshot, config);
+          return formatUsageDetails(snapshot, config, Date.now(), ctx.ui.theme);
         } catch {
           const cached = cache.get(task.key);
           return cached
-            ? `◌ Cached\n${formatUsageDetails(cached, config)}`
+            ? `◌ Cached\n${formatUsageDetails(cached, config, Date.now(), ctx.ui.theme)}`
             : `${task.label} usage unavailable`;
         }
       }));
@@ -210,7 +211,7 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
         }));
         suppressAccountBadge(provider);
       }
-      ctx.ui.notify(sections.join("\n\n"), "info");
+      ctx.ui.notify(RESET_FOREGROUND + sections.join("\n\n"), "info");
     },
   });
 

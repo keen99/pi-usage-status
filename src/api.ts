@@ -54,10 +54,18 @@ export async function fetchZaiUsage(
   limits.sort((left, right) => quotaOrder(left.label) - quotaOrder(right.label));
   if (!limits.length) throw new Error("Z.AI usage response has no supported quota windows");
 
+  const reportedPlan = stringValue(body.level);
+  const normalizedPlan = reportedPlan?.toLowerCase();
+  const inferredLegacyTier = normalizedPlan !== undefined
+    && ["lite", "pro", "max"].includes(normalizedPlan)
+    && limits.some((limit) => limit.label === "5h")
+    && limits.some((limit) => limit.label === "tools")
+    && !limits.some((limit) => limit.label === "week");
+
   return {
     provider: "zai",
     providerLabel: "GLM",
-    planName: stringValue(body.level),
+    planName: inferredLegacyTier ? `legacy_${normalizedPlan}` : reportedPlan,
     limits,
   };
 }

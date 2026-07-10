@@ -19,7 +19,7 @@ Reads `zai.key` (or `zai.access`) from `~/.pi/agent/auth.json` and sends it only
 https://api.z.ai/api/monitor/usage/quota/limit
 ```
 
-Displays quota windows actually returned by Z.AI: five-hour tokens, weekly tokens when present, and monthly tool usage (`🔧`). Some legacy Pro accounts do not receive a weekly window.
+Displays quota windows actually returned by Z.AI: five-hour tokens, weekly tokens when present, and monthly tool usage (`🔧`). Z.AI reports legacy tiers as plain `lite`, `pro`, or `max`; when five-hour and tools quotas exist but weekly quota is absent, extension labels tier `Legacy Lite`, `Legacy Pro`, or `Legacy Max` as documented inference.
 
 ### OpenAI Codex
 
