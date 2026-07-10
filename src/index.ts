@@ -292,7 +292,9 @@ function sameCredential(left: CodexCredential, right: CodexCredential | undefine
 function deduplicateCredentials(credentials: CodexCredential[]): CodexCredential[] {
   const seen = new Set<string>();
   return credentials.filter((credential) => {
-    const key = `${credential.source}:${credential.accountName ?? credential.accountId ?? "default"}`;
+    const key = credential.accountId
+      ? `account:${credential.accountId}`
+      : `${credential.source}:${credential.accountName ?? "default"}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

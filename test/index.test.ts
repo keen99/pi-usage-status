@@ -73,3 +73,24 @@ test("all-account toggle creates managed and standard auth tasks", async () => {
   );
   assert.deepEqual(tasks.map((task) => task.key), ["codex:teams", "codex:plus", "codex:default"]);
 });
+
+test("deduplicates managed and standard auth for same Codex account id", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-usage-status-index-"));
+  writeFileSync(join(dir, "codex-accounts.json"), JSON.stringify({
+    active: "teams",
+    accounts: {
+      teams: { access: "teams-token", accountId: "same-account" },
+    },
+  }));
+  writeFileSync(join(dir, "auth.json"), JSON.stringify({
+    "openai-codex": { access: "default-token", accountId: "same-account" },
+  }));
+
+  const tasks = await buildFetchTasks(
+    fakeCodexContext("runtime-token"),
+    "openai-codex",
+    { ...DEFAULT_CONFIG, codexAccountDisplay: "all" },
+    dir,
+  );
+  assert.deepEqual(tasks.map((task) => task.key), ["codex:teams"]);
+});
