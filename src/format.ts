@@ -51,26 +51,41 @@ export function formatUsageDetails(
   const title = snapshot.accountName && snapshot.planName
     ? `${heading.join(" ")} (${formatPlanName(snapshot.planName)})`
     : heading.join(" ");
-  const lines = [`${title} usage`];
+  const lines = [title, ""];
 
   for (const limit of snapshot.limits) {
-    const used = clampPercent(limit.usedPercent);
-    const shown = config.percentageStyle === "remaining" ? 100 - used : used;
-    const qualifier = config.percentageStyle === "remaining" ? "remaining" : "used";
-    const label = { "5h": "Five-hour", week: "Weekly", tools: "Tools" }[limit.label];
-    let line = `${label}: ${Math.round(shown)}% ${qualifier}`;
+    const remaining = 100 - clampPercent(limit.usedPercent);
+    const label = {
+      "5h": "5h limit:",
+      week: "Weekly limit:",
+      tools: "Tools limit:",
+    }[limit.label].padEnd(15);
+    let details = `${progressBar(remaining)} ${Math.round(remaining)}% left`;
     if (limit.current !== undefined && limit.total !== undefined) {
-      const current = config.percentageStyle === "remaining"
-        ? Math.max(0, limit.total - limit.current)
-        : limit.current;
-      line += ` (${formatCount(current)}/${formatCount(limit.total)})`;
+      details += ` (${formatCount(Math.max(0, limit.total - limit.current))}/${formatCount(limit.total)} left)`;
     }
     if (config.showResetTimes && limit.resetsAt) {
-      line += ` · resets in ${formatDuration(limit.resetsAt - now)}`;
+      details += ` (resets ${formatResetAt(limit.resetsAt, now)})`;
     }
-    lines.push(line);
+    lines.push(`  ${label}${details}`);
   }
   return lines.join("\n");
+}
+
+function progressBar(percentRemaining: number): string {
+  const width = 20;
+  const filled = Math.round((clampPercent(percentRemaining) / 100) * width);
+  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}]`;
+}
+
+function formatResetAt(timestamp: number, nowTimestamp: number): string {
+  const reset = new Date(timestamp);
+  const now = new Date(nowTimestamp);
+  if (!Number.isFinite(reset.getTime())) return "unknown";
+  const time = `${String(reset.getHours()).padStart(2, "0")}:${String(reset.getMinutes()).padStart(2, "0")}`;
+  if (reset.toDateString() === now.toDateString()) return time;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${time} on ${reset.getDate()} ${months[reset.getMonth()]}`;
 }
 
 export function formatDuration(milliseconds: number): string {

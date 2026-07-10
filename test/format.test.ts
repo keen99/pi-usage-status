@@ -62,11 +62,12 @@ test("formats Z.AI monthly tools quota with icon and count", () => {
 
 test("formats detailed usage for /usage", () => {
   assert.equal(
-    formatUsageDetails(snapshot, { ...DEFAULT_CONFIG, color: false }, now),
+    formatUsageDetails(snapshot, { ...DEFAULT_CONFIG, color: false, showResetTimes: false }, now),
     [
-      "Codex teams (Team) usage",
-      "Five-hour: 32% used · resets in 2h14m",
-      "Weekly: 84% used · resets in 23h",
+      "Codex teams (Team)",
+      "",
+      "  5h limit:      [██████████████░░░░░░] 68% left",
+      "  Weekly limit:  [███░░░░░░░░░░░░░░░░░] 16% left",
     ].join("\n"),
   );
 });
