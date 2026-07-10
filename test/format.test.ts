@@ -40,6 +40,18 @@ test("falls back to normalized plan label when no account name", () => {
   assert.match(formatUsageStatus(noAccount, { ...DEFAULT_CONFIG, color: false }, { now }), /^Codex Pro Lite \|/);
 });
 
+test("shortens legacy tier in status but not detailed usage", () => {
+  const legacy = {
+    ...snapshot,
+    provider: "zai" as const,
+    providerLabel: "GLM",
+    accountName: undefined,
+    planName: "legacy_pro",
+  };
+  assert.match(formatUsageStatus(legacy, { ...DEFAULT_CONFIG, color: false }, { now }), /^GLM Pro-L \|/);
+  assert.match(formatUsageDetails(legacy, { ...DEFAULT_CONFIG, showResetTimes: false }, now), /^GLM Legacy Pro$/m);
+});
+
 test("formats Z.AI monthly tools quota with icon and count", () => {
   const zai: UsageSnapshot = {
     provider: "zai",

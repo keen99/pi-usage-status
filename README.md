@@ -4,9 +4,9 @@ Readable subscription quota status for [pi](https://github.com/earendil-works/pi
 Shows only the active model provider by default.
 
 ```text
-GLM Pro | 5h 1% ↻ 3h44m | 🔧 4% (42/1000) ↻ 23d
-Codex teams | 5h 32% ↻ 1h45m | week 84% ↻ 23h
-Codex Plus | 5h 8% ↻ 4h | week 2% ↻ 6d
+| GLM Pro-L | 5h 1% ↻ 3h44m | 🔧 4% (42/1000) ↻ 23d |
+| Codex teams | 5h 32% ↻ 1h45m | week 84% ↻ 23h |
+| Codex Plus | 5h 8% ↻ 4h | week 2% ↻ 6d |
 ```
 
 ## Providers

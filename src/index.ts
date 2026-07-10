@@ -35,7 +35,7 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
 
   function setStatus(value: string | undefined): void {
     try {
-      currentCtx?.ui.setStatus(STATUS_KEY, value);
+      currentCtx?.ui.setStatus(STATUS_KEY, value ? `| ${value} |` : undefined);
     } catch {
       // Session replacement can stale a captured context.
     }

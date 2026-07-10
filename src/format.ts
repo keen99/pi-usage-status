@@ -20,7 +20,7 @@ export function formatUsageStatus(
   const heading: string[] = [];
   if (config.showProviderLabel) heading.push(snapshot.providerLabel);
   if (config.showAccountName && snapshot.accountName) heading.push(snapshot.accountName);
-  else if (config.showPlan && snapshot.planName) heading.push(formatPlanName(snapshot.planName));
+  else if (config.showPlan && snapshot.planName) heading.push(formatStatusPlanName(snapshot.planName));
 
   const parts = [heading.join(" ")].filter(Boolean);
   for (const limit of snapshot.limits) {
@@ -139,6 +139,12 @@ function colorForUsedPercent(used: number): "success" | "warning" | "error" {
 
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+}
+
+function formatStatusPlanName(value: string): string {
+  const legacyTier = value.toLowerCase().match(/^legacy_(lite|pro|max)$/)?.[1];
+  if (legacyTier) return `${legacyTier.charAt(0).toUpperCase()}${legacyTier.slice(1)}-L`;
+  return formatPlanName(value);
 }
 
 function formatPlanName(value: string): string {
