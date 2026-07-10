@@ -1,0 +1,44 @@
+{
+  "name": "pi-usage-status",
+  "version": "0.1.0",
+  "description": "Readable active-provider quota status for pi, with Z.AI and multi-account Codex support.",
+  "type": "module",
+  "license": "MIT",
+  "author": "keen99",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/keen99/pi-usage-status"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "extension",
+    "usage",
+    "quota",
+    "codex",
+    "zai"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  }
+}
