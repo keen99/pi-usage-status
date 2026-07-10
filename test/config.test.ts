@@ -16,6 +16,7 @@ test("loads toggles and bounds polling intervals", () => {
     providerDisplay: "all",
     codexAccountDisplay: "all",
     percentageStyle: "remaining",
+    toolsLabel: "text",
     refreshIntervalMs: 10,
     requestTimeoutMs: 999999,
     showResetTimes: false,
@@ -25,6 +26,7 @@ test("loads toggles and bounds polling intervals", () => {
   assert.equal(config.providerDisplay, "all");
   assert.equal(config.codexAccountDisplay, "all");
   assert.equal(config.percentageStyle, "remaining");
+  assert.equal(config.toolsLabel, "text");
   assert.equal(config.refreshIntervalMs, 15_000);
   assert.equal(config.requestTimeoutMs, 60_000);
   assert.equal(config.showResetTimes, false);

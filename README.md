@@ -4,7 +4,7 @@ Readable subscription quota status for [pi](https://github.com/earendil-works/pi
 Shows only the active model provider by default.
 
 ```text
-GLM Legacy Pro | 5h 16% ↻ 2h14m | week 4% ↻ 4d
+GLM Pro | 5h 1% ↻ 3h44m | 🔧 4% (42/1000) ↻ 23d
 Codex teams | 5h 32% ↻ 1h45m | week 84% ↻ 23h
 Codex Plus | 5h 8% ↻ 4h | week 2% ↻ 6d
 ```
@@ -19,7 +19,7 @@ Reads `zai.key` (or `zai.access`) from `~/.pi/agent/auth.json` and sends it only
 https://api.z.ai/api/monitor/usage/quota/limit
 ```
 
-Displays five-hour and weekly used quota.
+Displays quota windows actually returned by Z.AI: five-hour tokens, weekly tokens when present, and monthly tool usage (`🔧`). Some legacy Pro accounts do not receive a weekly window.
 
 ### OpenAI Codex
 
@@ -80,6 +80,7 @@ Optional file: `~/.pi/agent/pi-usage-status.json`
   "providerDisplay": "active",
   "codexAccountDisplay": "active",
   "percentageStyle": "used",
+  "toolsLabel": "icon",
   "refreshIntervalMs": 60000,
   "requestTimeoutMs": 5000,
   "showProviderLabel": true,
@@ -94,6 +95,7 @@ Optional file: `~/.pi/agent/pi-usage-status.json`
 - `providerDisplay`: `active` or `all`
 - `codexAccountDisplay`: `active` or `all`
 - `percentageStyle`: `used` or `remaining`
+- `toolsLabel`: `icon` (`🔧`) or `text` (`tools`)
 - `suppressCodexAccountsStatus`: merges account name into this extension's status by hiding separate `codex:teams` badge. Account switching remains untouched.
 
 Defaults show active provider and active Codex account only.

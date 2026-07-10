@@ -23,7 +23,16 @@ export function formatUsageStatus(
     const coloredPercent = config.color && options.theme
       ? options.theme.fg(colorForUsedPercent(used), percent)
       : percent;
-    let text = `${limit.label} ${coloredPercent}`;
+    const label = limit.label === "tools"
+      ? (config.toolsLabel === "icon" ? "🔧" : "tools")
+      : limit.label;
+    let text = `${label} ${coloredPercent}`;
+    if (limit.current !== undefined && limit.total !== undefined) {
+      const current = config.percentageStyle === "remaining"
+        ? Math.max(0, limit.total - limit.current)
+        : limit.current;
+      text += ` (${formatCount(current)}/${formatCount(limit.total)})`;
+    }
     if (config.showResetTimes && limit.resetsAt) text += ` ↻ ${formatDuration(limit.resetsAt - now)}`;
     parts.push(text);
   }
@@ -44,6 +53,10 @@ export function formatDuration(milliseconds: number): string {
 
 export function snapshotKey(snapshot: UsageSnapshot): string {
   return `${snapshot.provider}:${snapshot.accountName ?? "default"}`;
+}
+
+function formatCount(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.0+$|(?<=\.[0-9]*)0+$/, "");
 }
 
 function colorForUsedPercent(used: number): "success" | "warning" | "error" {

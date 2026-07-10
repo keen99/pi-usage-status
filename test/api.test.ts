@@ -19,14 +19,21 @@ test("parses Z.AI five-hour and weekly quota", async () => {
         limits: [
           { type: "TOKENS_LIMIT", unit: 3, percentage: 16, nextResetTime: 2_000_000_000_000 },
           { type: "TOKENS_LIMIT", unit: 6, percentage: 4, nextResetTime: 2_000_100_000_000 },
-          { type: "TIME_LIMIT", unit: 5, percentage: 9 },
+          { type: "TIME_LIMIT", unit: 5, percentage: 9, currentValue: 42, remaining: 958, nextResetTime: 2_001_000_000_000 },
         ],
       },
     }),
   });
   assert.equal(snapshot.providerLabel, "GLM");
   assert.equal(snapshot.planName, "legacy_pro");
-  assert.deepEqual(snapshot.limits.map((limit) => [limit.label, limit.usedPercent]), [["5h", 16], ["week", 4]]);
+  assert.deepEqual(snapshot.limits.map((limit) => [limit.label, limit.usedPercent]), [["5h", 16], ["week", 4], ["tools", 9]]);
+  assert.deepEqual(snapshot.limits[2], {
+    label: "tools",
+    usedPercent: 9,
+    current: 42,
+    total: 1000,
+    resetsAt: 2_001_000_000_000,
+  });
 });
 
 test("parses Codex quota and account label", async () => {

@@ -1,4 +1,4 @@
-import type { UsageSnapshot } from "./types.ts";
+import type { UsageLimit, UsageSnapshot } from "./types.ts";
 
 export const ZAI_USAGE_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
 export const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
@@ -17,15 +17,41 @@ export async function fetchZaiUsage(
   const body = asObject(root.data);
   if (!Array.isArray(body.limits)) throw new Error("Z.AI usage response missing limits");
 
-  const limits = body.limits.flatMap((value) => {
+  const limits: UsageLimit[] = [];
+  for (const value of body.limits) {
     const limit = asObject(value);
     const unit = numberValue(limit.unit);
-    if (unit !== 3 && unit !== 6) return [];
+    const type = stringValue(limit.type)?.toUpperCase();
     const usedPercent = numberValue(limit.percentage);
-    if (usedPercent === undefined) return [];
+    if (usedPercent === undefined) continue;
     const resetsAt = normalizeEpoch(numberValue(limit.nextResetTime));
-    return [{ label: unit === 3 ? "5h" as const : "week" as const, usedPercent, ...(resetsAt ? { resetsAt } : {}) }];
-  });
+
+    if (unit === 3 || unit === 6) {
+      limits.push({
+        label: unit === 3 ? "5h" : "week",
+        usedPercent,
+        ...(resetsAt ? { resetsAt } : {}),
+      });
+      continue;
+    }
+
+    if (unit === 5 && type === "TIME_LIMIT") {
+      const current = numberValue(limit.currentValue);
+      const remaining = numberValue(limit.remaining);
+      const reportedTotal = numberValue(limit.usage);
+      const total = current !== undefined && remaining !== undefined
+        ? current + remaining
+        : reportedTotal;
+      limits.push({
+        label: "tools",
+        usedPercent,
+        ...(resetsAt ? { resetsAt } : {}),
+        ...(current !== undefined ? { current } : {}),
+        ...(total !== undefined ? { total } : {}),
+      });
+    }
+  }
+  limits.sort((left, right) => quotaOrder(left.label) - quotaOrder(right.label));
   if (!limits.length) throw new Error("Z.AI usage response has no supported quota windows");
 
   return {
@@ -61,6 +87,10 @@ export async function fetchCodexUsage(
     ...(stringValue(root.plan_type) ? { planName: stringValue(root.plan_type) } : {}),
     limits,
   };
+}
+
+function quotaOrder(label: UsageLimit["label"]): number {
+  return { "5h": 0, week: 1, tools: 2 }[label];
 }
 
 function parseCodexWindow(label: "5h" | "week", value: unknown) {
