@@ -6,7 +6,7 @@ import {
   readAllCodexCredentials,
   readZaiApiKey,
 } from "./auth.ts";
-import { CONFIG_FILE, loadConfig } from "./config.ts";
+import { loadConfig } from "./config.ts";
 import { formatUsageDetails, formatUsageStatus, snapshotKey } from "./format.ts";
 import type { CodexCredential, UsageSnapshot, UsageStatusConfig } from "./types.ts";
 
@@ -169,28 +169,48 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("usage", {
-    description: "Show active provider usage, refresh it, or reload usage config",
+    description: "Show refreshed usage for all available subscriptions",
     handler: async (args, ctx) => {
       currentCtx = ctx as RuntimeContext;
       currentModel = ctx.model;
-      const action = args.trim();
-      if (action === "config") {
-        config = loadConfig(agentDir);
-        stopTimer();
-      } else if (action && action !== "refresh") {
-        ctx.ui.notify("Usage: /usage [refresh|config]", "warning");
+      if (args.trim()) {
+        ctx.ui.notify("Usage: /usage", "warning");
+        return;
+      }
+      config = loadConfig(agentDir);
+
+      const provider = currentModel?.provider ?? ctx.model?.provider;
+      const allConfig: UsageStatusConfig = {
+        ...config,
+        providerDisplay: "all",
+        codexAccountDisplay: "all",
+      };
+      const tasks = await buildFetchTasks(currentCtx, provider, allConfig, agentDir);
+      const sections = await Promise.all(tasks.map(async (task) => {
+        try {
+          const snapshot = await task.fetch();
+          cache.set(snapshotKey(snapshot), snapshot);
+          return formatUsageDetails(snapshot, config);
+        } catch {
+          const cached = cache.get(task.key);
+          return cached
+            ? `◌ Cached\n${formatUsageDetails(cached, config)}`
+            : `${task.label} usage unavailable`;
+        }
+      }));
+      if (!sections.length) {
+        ctx.ui.notify("No supported provider credentials found", "warning");
         return;
       }
 
-      await refresh();
-      const provider = currentModel?.provider ?? ctx.model?.provider;
-      const snapshot = activeCachedSnapshot(provider);
-      if (!snapshot) {
-        ctx.ui.notify("Usage unavailable for active provider", "warning");
-        return;
+      const activeSnapshot = activeCachedSnapshot(provider);
+      if (activeSnapshot) {
+        setStatus(formatUsageStatus(activeSnapshot, config, {
+          theme: config.color ? ctx.ui.theme : undefined,
+        }));
+        suppressAccountBadge(provider);
       }
-      const prefix = action === "config" ? `Reloaded ${CONFIG_FILE}\n\n` : "";
-      ctx.ui.notify(prefix + formatUsageDetails(snapshot, config), "info");
+      ctx.ui.notify(sections.join("\n\n"), "info");
     },
   });
 

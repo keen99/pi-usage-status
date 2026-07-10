@@ -65,11 +65,9 @@ pi remove npm:@narumitw/pi-codex-usage
 
 ```text
 /usage
-/usage refresh
-/usage config
 ```
 
-`/usage` refreshes and shows detailed usage for active provider. `refresh` does same explicitly. `config` reloads configuration from disk before refreshing.
+`/usage` reloads configuration, refreshes, and shows detailed usage for every available Z.AI and Codex subscription. This includes all accounts managed by `@narumitw/pi-codex-accounts` plus standard Pi Codex auth. Status bar remains limited to active provider/account.
 
 ## Configuration
 
@@ -107,7 +105,7 @@ Defaults show active provider and active Codex account only.
 - Agent start
 - Every 60 seconds during long agent runs
 - Agent end
-- Manual `/usage-status refresh`
+- Manual `/usage`
 
 Failed refreshes retain same-provider/same-account cached data with `◌`. No cross-account cache fallback.
 
