@@ -3,12 +3,32 @@ export type DisplayMode = "active" | "all";
 export type PercentageStyle = "used" | "remaining";
 export type ToolsLabelStyle = "icon" | "text";
 
+/**
+ * Window kind drives display order and label resolution.
+ * - "tools": count-based quota (Z.AI unit 5), never time-labelled
+ * - "time": duration-based window, label derived from windowSeconds
+ * - "named": provider-defined semantic label (e.g. Z.AI unit 6 "week")
+ */
+export type WindowKind = "tools" | "time" | "named";
+
 export interface UsageLimit {
-  label: "5h" | "week" | "tools";
+  /**
+   * Human-readable label. For time windows this is derived from windowSeconds
+   * (e.g. "5h", "7d"). For named windows the provider supplies it. For tools
+   * it is always "tools".
+   */
+  label: string;
+  kind: WindowKind;
   usedPercent: number;
   resetsAt?: number;
   current?: number;
   total?: number;
+  /**
+   * Authoritative window length in seconds when known. Used for sort order and
+   * label derivation. Undefined for tools windows and when the provider does
+   * not report a duration.
+   */
+  windowSeconds?: number;
 }
 
 export interface UsageSnapshot {

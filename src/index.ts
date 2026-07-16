@@ -1,5 +1,6 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { fetchCodexUsage, fetchZaiUsage } from "./api.ts";
+import { fetchCodexUsage } from "./providers/codex.ts";
+import { fetchZaiUsage } from "./providers/zai.ts";
 import {
   extractBearerToken,
   readActiveCodexCredential,

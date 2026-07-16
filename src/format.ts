@@ -1,4 +1,4 @@
-import type { UsageSnapshot, UsageStatusConfig } from "./types.ts";
+import type { UsageLimit, UsageSnapshot, UsageStatusConfig } from "./types.ts";
 
 export interface StatusTheme {
   fg(
@@ -64,11 +64,7 @@ export function formatUsageDetails(
 
   for (const limit of snapshot.limits) {
     const remaining = 100 - clampPercent(limit.usedPercent);
-    const rawLabel = {
-      "5h": "5h limit:",
-      week: "Weekly limit:",
-      tools: "Tools limit:",
-    }[limit.label].padEnd(15);
+    const rawLabel = detailLabel(limit).padEnd(15);
     const label = theme ? theme.fg("muted", rawLabel) : rawLabel;
     const remainingText = `${Math.round(remaining)}% left`;
     let details = `${progressBar(remaining, theme)} ${theme
@@ -104,6 +100,16 @@ function formatResetAt(timestamp: number, nowTimestamp: number): string {
   if (reset.toDateString() === now.toDateString()) return time;
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${time} on ${reset.getDate()} ${months[reset.getMonth()]}`;
+}
+
+/**
+ * Build a human-readable label for the /usage detail view. Adapts to any
+ * window duration (5h, 7d, 3h, ...) plus the tools/named special cases.
+ */
+function detailLabel(limit: UsageLimit): string {
+  if (limit.kind === "tools") return "Tools limit:";
+  if (limit.label === "week") return "Weekly limit:";
+  return `${limit.label} limit:`;
 }
 
 export function formatDuration(milliseconds: number): string {

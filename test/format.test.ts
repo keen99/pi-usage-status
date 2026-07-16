@@ -11,8 +11,8 @@ const snapshot: UsageSnapshot = {
   accountName: "teams",
   planName: "team",
   limits: [
-    { label: "5h", usedPercent: 32, resetsAt: now + 2 * 3_600_000 + 14 * 60_000 },
-    { label: "week", usedPercent: 84, resetsAt: now + 23 * 3_600_000 },
+    { label: "5h", kind: "time", usedPercent: 32, windowSeconds: 18000, resetsAt: now + 2 * 3_600_000 + 14 * 60_000 },
+    { label: "week", kind: "named", usedPercent: 84, windowSeconds: 604800, resetsAt: now + 23 * 3_600_000 },
   ],
 };
 
@@ -58,8 +58,8 @@ test("formats Z.AI monthly tools quota with icon and count", () => {
     providerLabel: "GLM",
     planName: "pro",
     limits: [
-      { label: "5h", usedPercent: 1, resetsAt: now + 3 * 3_600_000 },
-      { label: "tools", usedPercent: 4, current: 42, total: 1000, resetsAt: now + 23 * 86_400_000 },
+      { label: "5h", kind: "named", usedPercent: 1, windowSeconds: 18000, resetsAt: now + 3 * 3_600_000 },
+      { label: "tools", kind: "tools", usedPercent: 4, current: 42, total: 1000, resetsAt: now + 23 * 86_400_000 },
     ],
   };
   assert.equal(
