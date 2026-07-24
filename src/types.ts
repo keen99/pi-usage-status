@@ -31,12 +31,18 @@ export interface UsageLimit {
   windowSeconds?: number;
 }
 
+export interface ResetCredits {
+  available: number;
+  unlimited?: boolean;
+}
+
 export interface UsageSnapshot {
   provider: UsageProvider;
   providerLabel: string;
   accountName?: string;
   planName?: string;
   limits: UsageLimit[];
+  resetCredits?: ResetCredits;
 }
 
 export interface UsageStatusConfig {

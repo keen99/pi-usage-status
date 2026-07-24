@@ -1,5 +1,5 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { fetchCodexUsage } from "./providers/codex.ts";
+import { consumeCodexResetCredit, fetchCodexUsage } from "./providers/codex.ts";
 import { fetchZaiUsage } from "./providers/zai.ts";
 import {
   extractBearerToken,
@@ -216,6 +216,87 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
     },
   });
 
+  pi.registerCommand("usage-reset", {
+    description: "Redeem one available Codex usage limit reset",
+    handler: async (args, ctx) => {
+      currentCtx = ctx as RuntimeContext;
+      currentModel = ctx.model;
+      if (args.trim()) {
+        ctx.ui.notify("Usage: /usage-reset", "warning");
+        return;
+      }
+      config = loadConfig(agentDir);
+
+      const allConfig: UsageStatusConfig = {
+        ...config,
+        providerDisplay: "all",
+        codexAccountDisplay: "all",
+      };
+      const tasks = (await buildFetchTasks(currentCtx, "openai-codex", allConfig, agentDir))
+        .filter((task) => task.provider === "codex");
+      if (!tasks.length) {
+        ctx.ui.notify("No Codex credentials found", "warning");
+        return;
+      }
+
+      const snapshots: Array<{ task: FetchTask; snapshot: UsageSnapshot }> = [];
+      for (const task of tasks) {
+        try {
+          const snapshot = await task.fetch();
+          cache.set(snapshotKey(snapshot), snapshot);
+          snapshots.push({ task, snapshot });
+        } catch {
+          // Ignore unavailable accounts for reset flow.
+        }
+      }
+      if (!snapshots.length) {
+        ctx.ui.notify("Codex usage unavailable", "warning");
+        return;
+      }
+
+      const available = snapshots.filter(({ snapshot }) => (snapshot.resetCredits?.available ?? 0) > 0 || snapshot.resetCredits?.unlimited);
+      if (!available.length) {
+        ctx.ui.notify("No Codex usage resets available", "info");
+        return;
+      }
+
+      let selected = available[0];
+      if (available.length > 1) {
+        const labels = available.map(({ task, snapshot }) => `${task.label} (${formatResetCreditCount(snapshot)} available)`);
+        const choice = await ctx.ui.select("Redeem reset for which Codex account?", labels);
+        if (!choice) return;
+        const index = labels.indexOf(choice);
+        selected = available[index] ?? selected;
+      }
+
+      const accountLabel = selected.task.label;
+      const countBefore = formatResetCreditCount(selected.snapshot);
+      const confirmed = await ctx.ui.confirm(
+        "Redeem Codex usage reset?",
+        `This will consume 1 usage limit reset for ${accountLabel}. Available now: ${countBefore}.`,
+      );
+      if (!confirmed) return;
+
+      try {
+        await selected.task.consumeReset?.();
+        const snapshot = await selected.task.fetch();
+        cache.set(snapshotKey(snapshot), snapshot);
+        ctx.ui.notify(`Redeemed 1 Codex usage reset for ${accountLabel}.`, "info");
+        const provider = currentModel?.provider ?? ctx.model?.provider;
+        const activeSnapshot = activeCachedSnapshot(provider);
+        if (activeSnapshot) {
+          setStatus(formatUsageStatus(activeSnapshot, config, {
+            theme: config.color ? ctx.ui.theme : undefined,
+          }));
+          suppressAccountBadge(provider);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`Failed to redeem Codex usage reset: ${message}`, "error");
+      }
+    },
+  });
+
   function activeCachedSnapshot(provider: string | undefined): UsageSnapshot | undefined {
     if (provider === "zai") return cache.get("zai:default");
     if (provider !== "openai-codex") return undefined;
@@ -227,7 +308,9 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
 interface FetchTask {
   key: string;
   label: string;
+  provider: UsageSnapshot["provider"];
   fetch: () => Promise<UsageSnapshot>;
+  consumeReset?: () => Promise<unknown>;
 }
 
 export async function buildFetchTasks(
@@ -246,6 +329,7 @@ export async function buildFetchTasks(
       tasks.push({
         key: "zai:default",
         label: "GLM",
+        provider: "zai",
         fetch: () => fetchZaiUsage(key, { timeoutMs: config.requestTimeoutMs }),
       });
     }
@@ -265,7 +349,9 @@ export async function buildFetchTasks(
       tasks.push({
         key: `codex:${name ?? "default"}`,
         label: name ? `Codex ${name}` : "Codex",
+        provider: "codex",
         fetch: () => fetchCodexUsage(resolved, { timeoutMs: config.requestTimeoutMs }),
+        consumeReset: () => consumeCodexResetCredit(resolved, { timeoutMs: config.requestTimeoutMs }),
       });
     }
   }
@@ -283,6 +369,10 @@ async function readRuntimeCodexToken(ctx: RuntimeContext): Promise<string | unde
   } catch {
     return undefined;
   }
+}
+
+function formatResetCreditCount(snapshot: UsageSnapshot): string {
+  return snapshot.resetCredits?.unlimited ? "unlimited" : String(snapshot.resetCredits?.available ?? 0);
 }
 
 function sameCredential(left: CodexCredential, right: CodexCredential | undefined): boolean {

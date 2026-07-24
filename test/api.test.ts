@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fetchCodexUsage } from "../src/providers/codex.ts";
+import { CODEX_RESET_CONSUME_URL, consumeCodexResetCredit, fetchCodexUsage } from "../src/providers/codex.ts";
 import { fetchZaiUsage } from "../src/providers/zai.ts";
 
 function jsonFetch(data: unknown): typeof fetch {
@@ -84,6 +84,48 @@ test("parses Codex quota with dynamic window labels", async () => {
   assert.ok(snapshot.limits.every((limit) => typeof limit.resetsAt === "number"));
   assert.equal(snapshot.limits[0].windowSeconds, 18000);
   assert.equal(snapshot.limits[1].windowSeconds, 604800);
+});
+
+test("parses Codex reset credits", async () => {
+  const snapshot = await fetchCodexUsage(
+    { access: "token" },
+    {
+      timeoutMs: 1000,
+      fetchFn: jsonFetch({
+        plan_type: "team",
+        rate_limit: {
+          primary_window: { used_percent: 32, limit_window_seconds: 18000 },
+        },
+        rate_limit_reset_credits: { available_count: 3, applicable_available_count: 0 },
+      }),
+    },
+  );
+  assert.deepEqual(snapshot.resetCredits, { available: 3 });
+});
+
+test("consumes Codex reset credit with account header", async () => {
+  let url = "";
+  let method = "";
+  let headers: Headers | undefined;
+  let body = "";
+  await consumeCodexResetCredit(
+    { access: "token", accountId: "acct" },
+    {
+      timeoutMs: 1000,
+      fetchFn: async (input, init) => {
+        url = String(input);
+        method = init?.method ?? "GET";
+        headers = new Headers(init?.headers);
+        body = String(init?.body ?? "");
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+    },
+  );
+  assert.equal(url, CODEX_RESET_CONSUME_URL);
+  assert.equal(method, "POST");
+  assert.equal(headers?.get("authorization"), "Bearer token");
+  assert.equal(headers?.get("chatgpt-account-id"), "acct");
+  assert.equal(body, "{}");
 });
 
 test("adapts when Codex collapses to a single weekly window", async () => {

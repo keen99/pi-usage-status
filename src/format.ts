@@ -23,6 +23,10 @@ export function formatUsageStatus(
   else if (config.showPlan && snapshot.planName) heading.push(formatStatusPlanName(snapshot.planName));
 
   const parts = [heading.join(" ")].filter(Boolean);
+  if (snapshot.resetCredits && snapshot.resetCredits.available > 0) {
+    parts.push(`↺ ${snapshot.resetCredits.unlimited ? "∞" : snapshot.resetCredits.available}`);
+  }
+
   for (const limit of snapshot.limits) {
     const used = clampPercent(limit.usedPercent);
     const shown = config.percentageStyle === "remaining" ? 100 - used : used;
@@ -61,6 +65,12 @@ export function formatUsageDetails(
     : heading.join(" ");
   const styledTitle = theme ? theme.fg("accent", theme.bold(title)) : title;
   const lines = [styledTitle, ""];
+
+  if (snapshot.resetCredits) {
+    const available = snapshot.resetCredits.unlimited ? "unlimited" : String(snapshot.resetCredits.available);
+    const text = `Usage resets: ${available} available`;
+    lines.push(`  ${theme ? theme.fg("muted", text) : text}`);
+  }
 
   for (const limit of snapshot.limits) {
     const remaining = 100 - clampPercent(limit.usedPercent);
