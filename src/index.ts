@@ -217,14 +217,11 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("usage-reset", {
-    description: "Redeem one available Codex usage limit reset",
+    description: "Redeem one available Codex usage limit reset (optionally pass account name)",
     handler: async (args, ctx) => {
       currentCtx = ctx as RuntimeContext;
       currentModel = ctx.model;
-      if (args.trim()) {
-        ctx.ui.notify("Usage: /usage-reset", "warning");
-        return;
-      }
+      const accountArg = args.trim().toLowerCase();
       config = loadConfig(agentDir);
 
       const allConfig: UsageStatusConfig = {
@@ -261,7 +258,15 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
       }
 
       let selected = available[0];
-      if (available.length > 1) {
+      if (accountArg) {
+        const match = available.find(({ task }) => task.label.toLowerCase().includes(accountArg));
+        if (!match) {
+          const names = available.map((s) => s.task.label).join(", ");
+          ctx.ui.notify(`No matching Codex account "${args.trim()}". Available: ${names}`, "warning");
+          return;
+        }
+        selected = match;
+      } else if (available.length > 1) {
         const labels = available.map(({ task, snapshot }) => `${task.label} (${formatResetCreditCount(snapshot)} available)`);
         const choice = await ctx.ui.select("Redeem reset for which Codex account?", labels);
         if (!choice) return;
@@ -281,7 +286,8 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
         await selected.task.consumeReset?.();
         const snapshot = await selected.task.fetch();
         cache.set(snapshotKey(snapshot), snapshot);
-        ctx.ui.notify(`Redeemed 1 Codex usage reset for ${accountLabel}.`, "info");
+        const countAfter = formatResetCreditCount(snapshot);
+        ctx.ui.notify(`Redeemed 1 Codex usage reset for ${accountLabel}. ${countAfter} remaining.`, "info");
         const provider = currentModel?.provider ?? ctx.model?.provider;
         const activeSnapshot = activeCachedSnapshot(provider);
         if (activeSnapshot) {
