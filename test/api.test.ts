@@ -125,7 +125,7 @@ test("consumes Codex reset credit with account header", async () => {
   assert.equal(method, "POST");
   assert.equal(headers?.get("authorization"), "Bearer token");
   assert.equal(headers?.get("chatgpt-account-id"), "acct");
-  assert.equal(body, "{}");
+  assert.match(body, /^\{"redeem_request_id":"[0-9a-f-]+"\}$/);
 });
 
 test("adapts when Codex collapses to a single weekly window", async () => {

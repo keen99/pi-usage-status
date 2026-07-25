@@ -7,8 +7,10 @@ export async function fetchJson(
 	const timer = setTimeout(() => controller.abort(), options.timeoutMs);
 	try {
 		const response = await (options.fetchFn ?? fetch)(url, { ...init, signal: controller.signal });
-		if (!response.ok)
-			throw new Error(`HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`);
+		if (!response.ok) {
+			const detail = await readErrorDetail(response);
+			throw new Error(`HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}${detail ? `: ${detail}` : ""}`);
+		}
 		return await response.json();
 	} catch (error) {
 		if (controller.signal.aborted) throw new Error(`Request timed out after ${options.timeoutMs}ms`);
@@ -21,6 +23,31 @@ export async function fetchJson(
 export function normalizeEpoch(value: number | undefined): number | undefined {
 	if (value === undefined || value <= 0) return undefined;
 	return value < 10_000_000_000 ? value * 1000 : value;
+}
+
+async function readErrorDetail(response: Response): Promise<string | undefined> {
+	try {
+		const text = await response.text();
+		if (!text) return undefined;
+		try {
+			const parsed = JSON.parse(text) as unknown;
+			if (parsed && typeof parsed === "object") {
+				const obj = parsed as Record<string, unknown>;
+				const inner = obj.error;
+				if (inner && typeof inner === "object") {
+					const msg = (inner as Record<string, unknown>).message;
+					if (typeof msg === "string" && msg) return msg;
+				}
+				if (typeof obj.message === "string" && obj.message) return obj.message;
+				if (typeof obj.detail === "string" && obj.detail) return obj.detail;
+			}
+			return text.slice(0, 200);
+		} catch {
+			return text.slice(0, 200);
+		}
+	} catch {
+		return undefined;
+	}
 }
 
 export function asObject(value: unknown): Record<string, unknown> {

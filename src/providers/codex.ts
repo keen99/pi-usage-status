@@ -41,7 +41,7 @@ export async function consumeCodexResetCredit(
 	return await fetchJson(CODEX_RESET_CONSUME_URL, {
 		method: "POST",
 		headers: codexHeaders(credential, { "content-type": "application/json" }),
-		body: JSON.stringify({}),
+		body: JSON.stringify({ redeem_request_id: crypto.randomUUID() }),
 	}, options);
 }
 
