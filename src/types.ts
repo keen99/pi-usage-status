@@ -43,6 +43,9 @@ export interface UsageSnapshot {
   planName?: string;
   limits: UsageLimit[];
   resetCredits?: ResetCredits;
+  /** When the provider access token expires (epoch ms), if known.
+   *  Codex JWTs carry exp; shown so users know when /login is needed. */
+  tokenExpiresAt?: number;
 }
 
 export interface UsageStatusConfig {

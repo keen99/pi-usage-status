@@ -72,6 +72,17 @@ export function formatUsageDetails(
     lines.push(`  ${theme ? theme.fg("muted", text) : text}`);
   }
 
+  if (typeof snapshot.tokenExpiresAt === "number" && Number.isFinite(snapshot.tokenExpiresAt)) {
+    const ms = snapshot.tokenExpiresAt - now;
+    const expired = ms <= 0;
+    const dur = formatDuration(Math.abs(ms));
+    const text = expired
+      ? `Token expired ${dur} ago (run /login)`
+      : `Token expires in ${dur}`;
+    const color = expired ? "error" : ms < 3600_000 ? "warning" : "dim";
+    lines.push(`  ${theme ? theme.fg(color, text) : text}`);
+  }
+
   for (const limit of snapshot.limits) {
     const remaining = 100 - clampPercent(limit.usedPercent);
     const rawLabel = detailLabel(limit).padEnd(15);

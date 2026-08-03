@@ -8,7 +8,7 @@ import {
   readZaiApiKey,
 } from "./auth.ts";
 import { loadConfig } from "./config.ts";
-import { formatUsageDetails, formatUsageStatus, snapshotKey } from "./format.ts";
+import { formatDuration, formatUsageDetails, formatUsageStatus, snapshotKey } from "./format.ts";
 import type { CodexCredential, UsageSnapshot, UsageStatusConfig } from "./types.ts";
 
 const STATUS_KEY = "usage-status";
@@ -197,7 +197,7 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
           const cached = cache.get(task.key);
           return cached
             ? `◌ Cached\n${formatUsageDetails(cached, config, Date.now(), ctx.ui.theme)}`
-            : `${task.label} usage unavailable`;
+            : `${task.label} usage unavailable${formatUnavailableReason(task, Date.now())}`;
         }
       }));
       if (!sections.length) {
@@ -317,6 +317,9 @@ interface FetchTask {
   provider: UsageSnapshot["provider"];
   fetch: () => Promise<UsageSnapshot>;
   consumeReset?: () => Promise<unknown>;
+  /** When the access token expires (epoch ms), if known. Used to explain
+   *  "usage unavailable" for Codex accounts whose JWT has expired. */
+  tokenExpiresAt?: number;
 }
 
 export async function buildFetchTasks(
@@ -358,6 +361,9 @@ export async function buildFetchTasks(
         provider: "codex",
         fetch: () => fetchCodexUsage(resolved, { timeoutMs: config.requestTimeoutMs }),
         consumeReset: () => consumeCodexResetCredit(resolved, { timeoutMs: config.requestTimeoutMs }),
+        ...(typeof resolved.expires === "number" && Number.isFinite(resolved.expires)
+          ? { tokenExpiresAt: resolved.expires }
+          : {}),
       });
     }
   }
@@ -375,6 +381,17 @@ async function readRuntimeCodexToken(ctx: RuntimeContext): Promise<string | unde
   } catch {
     return undefined;
   }
+}
+
+function formatUnavailableReason(task: FetchTask, now: number): string {
+  if (typeof task.tokenExpiresAt !== "number" || !Number.isFinite(task.tokenExpiresAt)) return "";
+  const ms = task.tokenExpiresAt - now;
+  if (ms <= 0) {
+    const ago = formatDuration(-ms);
+    return ` (token expired ${ago} ago — run /login openai-codex)`;
+  }
+  const until = formatDuration(ms);
+  return ` (token expires in ${until})`;
 }
 
 function formatResetCreditCount(snapshot: UsageSnapshot): string {

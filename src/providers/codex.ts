@@ -5,7 +5,7 @@ export const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 export const CODEX_RESET_CONSUME_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume";
 
 export async function fetchCodexUsage(
-	credential: { access: string; accountId?: string; accountName?: string },
+	credential: { access: string; accountId?: string; accountName?: string; expires?: number },
 	options: { timeoutMs: number; fetchFn?: typeof fetch },
 ): Promise<UsageSnapshot> {
 	const data = await fetchJson(CODEX_USAGE_URL, { headers: codexHeaders(credential) }, options);
@@ -31,6 +31,9 @@ export async function fetchCodexUsage(
 			: {}),
 		limits,
 		...(resetCredits ? { resetCredits } : {}),
+		...(typeof credential.expires === "number" && Number.isFinite(credential.expires)
+			? { tokenExpiresAt: credential.expires }
+			: {}),
 	};
 }
 
