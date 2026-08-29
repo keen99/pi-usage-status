@@ -1,6 +1,6 @@
 {
   "name": "pi-usage-status",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "Readable active-provider quota status for pi, with Z.AI and multi-account Codex support.",
   "type": "module",
   "license": "MIT",

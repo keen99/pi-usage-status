@@ -17,9 +17,12 @@ Reads `zai.key` (or `zai.access`) from `~/.pi/agent/auth.json` and sends it only
 
 ```text
 https://api.z.ai/api/monitor/usage/quota/limit
+https://api.z.ai/api/biz/subscription/list
 ```
 
-Displays quota windows actually returned by Z.AI: five-hour tokens, weekly tokens when present, and monthly tool usage (`🔧`). Z.AI reports legacy tiers as plain `lite`, `pro`, or `max`; when five-hour and tools quotas exist but weekly quota is absent, extension labels tier `Legacy Lite`, `Legacy Pro`, or `Legacy Max` as documented inference.
+Displays quota windows actually returned by Z.AI: five-hour tokens, weekly tokens when present, and monthly tool usage (`🔧`).
+
+Plan generation comes from `api.z.ai/api/biz/subscription/list` (queried in parallel, best-effort): the active `VALID` + `inCurrentPeriod` subscription's `version` field labels the plan. Z.AI generations: **V1** (2025 legacy prompts), **V2** (April 2026 prompt quotas), **V3** (2026-07-30 credits-based). Labels render `Pro-L` (V1 legacy), `V2 Pro`, `V3 Pro`. If the subscription endpoint fails, plan generation falls back to quota-shape inference: Z.AI reports legacy tiers as plain `lite`, `pro`, or `max`; when five-hour and tools quotas exist but weekly quota is absent, extension labels tier `Legacy Lite`, `Legacy Pro`, or `Legacy Max` as documented inference. Unknown quota units (possible under the V3 credits plan) still render generically with percentage + reset instead of disappearing.
 
 ### OpenAI Codex
 

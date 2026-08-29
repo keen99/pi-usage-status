@@ -10,6 +10,105 @@ function jsonFetch(data: unknown): typeof fetch {
   });
 }
 
+/** Route by URL so one fetchFn serves both the quota and subscription endpoints. */
+function routingFetch(map: Record<string, unknown>): typeof fetch {
+  return async (input) => {
+    const url = String(input);
+    if (!(url in map)) return new Response("not found", { status: 404 });
+    return new Response(JSON.stringify(map[url]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+}
+
+const V2_SHAPE_QUOTA = {
+  code: 200,
+  data: {
+    level: "pro",
+    limits: [
+      { type: "TOKENS_LIMIT", unit: 3, number: 5, percentage: 16 },
+      { type: "TOKENS_LIMIT", unit: 6, number: 7, percentage: 4 },
+      { type: "TIME_LIMIT", unit: 5, percentage: 9, currentValue: 42, remaining: 958 },
+    ],
+  },
+};
+
+test("subscription version V3 labels the credits plan", async () => {
+  const snapshot = await fetchZaiUsage("key", {
+    timeoutMs: 1000,
+    fetchFn: routingFetch({
+      "https://api.z.ai/api/monitor/usage/quota/limit": V2_SHAPE_QUOTA,
+      "https://api.z.ai/api/biz/subscription/list": {
+        code: 200,
+        data: [
+          { version: "V3", productName: "GLM Coding Pro", status: "VALID", inCurrentPeriod: true },
+        ],
+      },
+    }),
+  });
+  assert.equal(snapshot.planName, "v3_pro");
+});
+
+test("subscription version V1 agrees with legacy inference", async () => {
+  const snapshot = await fetchZaiUsage("key", {
+    timeoutMs: 1000,
+    fetchFn: routingFetch({
+      "https://api.z.ai/api/monitor/usage/quota/limit": {
+        code: 200,
+        data: {
+          level: "pro",
+          limits: [
+            { type: "TIME_LIMIT", unit: 5, percentage: 4, currentValue: 42, remaining: 958 },
+            { type: "TOKENS_LIMIT", unit: 3, number: 5, percentage: 1 },
+          ],
+        },
+      },
+      "https://api.z.ai/api/biz/subscription/list": {
+        code: 200,
+        data: [
+          { version: "V1", productName: "GLM Coding Pro", status: "VALID", inCurrentPeriod: true },
+          { version: "V2", productName: "GLM Coding Pro", status: "VALID", inCurrentPeriod: false },
+        ],
+      },
+    }),
+  });
+  assert.equal(snapshot.planName, "legacy_pro");
+});
+
+test("subscription endpoint failure falls back to quota-shape inference", async () => {
+  const snapshot = await fetchZaiUsage("key", {
+    timeoutMs: 1000,
+    fetchFn: routingFetch({
+      "https://api.z.ai/api/monitor/usage/quota/limit": V2_SHAPE_QUOTA,
+    }),
+  });
+  assert.equal(snapshot.planName, "pro");
+});
+
+test("unknown TOKENS_LIMIT unit renders generically via number-hours", async () => {
+  const snapshot = await fetchZaiUsage("key", {
+    timeoutMs: 1000,
+    fetchFn: routingFetch({
+      "https://api.z.ai/api/monitor/usage/quota/limit": {
+        code: 200,
+        data: {
+          level: "pro",
+          limits: [
+            { type: "TOKENS_LIMIT", unit: 9, number: 5, percentage: 42, nextResetTime: 2_000_000_000_000 },
+            { type: "TIME_LIMIT", unit: 5, percentage: 9, currentValue: 42, remaining: 958 },
+          ],
+        },
+      },
+    }),
+  });
+  assert.deepEqual(
+    snapshot.limits.map((limit) => [limit.label, limit.kind, limit.usedPercent]),
+    [["5h", "named", 42], ["tools", "tools", 9]],
+  );
+  assert.equal(snapshot.limits[0].windowSeconds, 18000);
+});
+
 test("parses Z.AI five-hour and weekly quota", async () => {
   const snapshot = await fetchZaiUsage("key", {
     timeoutMs: 1000,

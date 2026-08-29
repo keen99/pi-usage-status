@@ -1,7 +1,8 @@
 import type { UsageLimit, UsageSnapshot } from "../types.ts";
-import { asObject, fetchJson, normalizeEpoch, numberValue, stringValue } from "./shared.ts";
+import { asObject, fetchJson, normalizeEpoch, numberValue, stringValue, windowLabel } from "./shared.ts";
 
 export const ZAI_USAGE_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
+export const ZAI_SUBSCRIPTION_URL = "https://api.z.ai/api/biz/subscription/list";
 
 /**
  * Z.AI quota unit values observed in the wild.
@@ -27,11 +28,12 @@ export async function fetchZaiUsage(
 	apiKey: string,
 	options: { timeoutMs: number; fetchFn?: typeof fetch },
 ): Promise<UsageSnapshot> {
-	const data = await fetchJson(
-		ZAI_USAGE_URL,
-		{ headers: { Authorization: `Bearer ${apiKey}` } },
-		options,
-	);
+	// Subscription list is authoritative for plan generation (V1/V2/V3) but is
+	// best-effort: on failure we fall back to legacy quota-shape inference.
+	const [data, subscription] = await Promise.all([
+		fetchJson(ZAI_USAGE_URL, { headers: { Authorization: `Bearer ${apiKey}` } }, options),
+		fetchZaiSubscription(apiKey, options),
+	]);
 	const root = asObject(data);
 	if (numberValue(root.code) !== 200) throw new Error(`Z.AI usage API returned code ${String(root.code)}`);
 	const body = asObject(root.data);
@@ -49,7 +51,9 @@ export async function fetchZaiUsage(
 	limits.sort((left, right) => zaiSortKey(left) - zaiSortKey(right));
 
 	const reportedPlan = stringValue(body.level);
-	const planName = resolveZaiPlanName(reportedPlan, limits);
+	const planName = subscription
+		? planNameFromSubscription(subscription, reportedPlan)
+		: resolveZaiPlanName(reportedPlan, limits);
 
 	return {
 		provider: "zai",
@@ -59,6 +63,69 @@ export async function fetchZaiUsage(
 	};
 }
 
+interface ZaiSubscriptionInfo {
+	version: string;
+	tier?: string;
+}
+
+/**
+ * Query the subscription list for the active plan's generation. Z.AI plan
+ * generations: V1 (2025 legacy prompts), V2 (2026-04 prompt quotas), V3
+ * (2026-07-30 credits-based). The active entry is the VALID subscription whose
+ * current period is now; if several qualify, the lowest version wins (queued
+ * future periods sort later). Any failure returns undefined — never throws.
+ */
+async function fetchZaiSubscription(
+	apiKey: string,
+	options: { timeoutMs: number; fetchFn?: typeof fetch },
+): Promise<ZaiSubscriptionInfo | undefined> {
+	try {
+		const data = await fetchJson(
+			ZAI_SUBSCRIPTION_URL,
+			{ headers: { Authorization: `Bearer ${apiKey}` } },
+			options,
+		);
+		const root = asObject(data);
+		if (numberValue(root.code) !== 200) return undefined;
+		if (!Array.isArray(root.data)) return undefined;
+		const active = (root.data as unknown[])
+			.map((entry) => asObject(entry))
+			.filter((entry) => stringValue(entry.status) === "VALID" && entry.inCurrentPeriod === true)
+			.map((entry) => ({
+				version: stringValue(entry.version)?.toUpperCase(),
+				product: stringValue(entry.productName)?.toLowerCase() ?? "",
+			}))
+			.filter((entry): entry is { version: string; product: string } => !!entry.version)
+			.sort((left, right) => left.version.localeCompare(right.version));
+		const current = active[0];
+		if (!current) return undefined;
+		const tier = current.product.includes("max") ? "max"
+			: current.product.includes("pro") ? "pro"
+			: current.product.includes("lite") ? "lite"
+			: undefined;
+		return { version: current.version, ...(tier ? { tier } : {}) };
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Plan name from subscription generation. V1 keeps the legacy_ prefix so the
+ * renderer shows "Pro-L"; V2/V3 render as "V2 Pro" / "V3 Pro". Tier falls back
+ * to the quota endpoint's level string when the product name is unusable.
+ */
+function planNameFromSubscription(subscription: ZaiSubscriptionInfo, reportedLevel: string | undefined): string {
+	const tier = subscription.tier ?? mapLevelToTier(reportedLevel);
+	const version = subscription.version.toLowerCase();
+	if (version === "v1") return tier ? `legacy_${tier}` : "legacy";
+	return tier ? `${version}_${tier}` : version;
+}
+
+function mapLevelToTier(reportedLevel: string | undefined): string | undefined {
+	const normalized = reportedLevel?.toLowerCase();
+	return normalized === "lite" || normalized === "pro" || normalized === "max" ? normalized : undefined;
+}
+
 function parseZaiLimit(limit: Record<string, unknown>): UsageLimit | undefined {
 	const unit = numberValue(limit.unit);
 	const type = stringValue(limit.type)?.toUpperCase();
@@ -66,7 +133,7 @@ function parseZaiLimit(limit: Record<string, unknown>): UsageLimit | undefined {
 	if (usedPercent === undefined || unit === undefined) return undefined;
 	const resetsAt = normalizeEpoch(numberValue(limit.nextResetTime));
 
-	if (unit === ZAI_UNIT_TOOLS && type === "TIME_LIMIT") {
+	if (type === "TIME_LIMIT") {
 		const current = numberValue(limit.currentValue);
 		const remaining = numberValue(limit.remaining);
 		const reportedTotal = numberValue(limit.usage);
@@ -100,6 +167,21 @@ function parseZaiLimit(limit: Record<string, unknown>): UsageLimit | undefined {
 			kind: "named",
 			usedPercent,
 			windowSeconds,
+			...(resetsAt ? { resetsAt } : {}),
+		};
+	}
+
+	// Unknown TOKENS_LIMIT unit (possible under the V3 credits plan): keep the
+	// entry renderable instead of dropping it. The `number` field is the window
+	// length in hours when present (5 -> 5h, 7 -> 7d).
+	if (type === "TOKENS_LIMIT") {
+		const hours = numberValue(limit.number);
+		const windowSeconds = hours !== undefined && hours > 0 ? hours * 3600 : undefined;
+		return {
+			label: windowLabel(windowSeconds, "usage"),
+			kind: "named",
+			usedPercent,
+			...(windowSeconds ? { windowSeconds } : {}),
 			...(resetsAt ? { resetsAt } : {}),
 		};
 	}
