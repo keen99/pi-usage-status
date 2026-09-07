@@ -94,3 +94,29 @@ test("deduplicates managed and standard auth for same Codex account id", async (
   );
   assert.deepEqual(tasks.map((task) => task.key), ["codex:teams"]);
 });
+
+test("zai-1m provider (pi-zai-models 1M-context alias) still fetches GLM usage", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-usage-status-zai1m-"));
+  writeFileSync(join(dir, "auth.json"), JSON.stringify({ zai: { key: "zai-key" } }));
+
+  const tasks = await buildFetchTasks(
+    { model: { provider: "zai-1m" } } as unknown as RuntimeContext,
+    "zai-1m",
+    { ...DEFAULT_CONFIG, color: false },
+    dir,
+  );
+  assert.deepEqual(tasks.map((task) => [task.key, task.label]), [["zai:default", "GLM"]]);
+});
+
+test("zai-1m is excluded when active provider is unrelated", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pi-usage-status-zai1m-2-"));
+  writeFileSync(join(dir, "auth.json"), JSON.stringify({ zai: { key: "zai-key" } }));
+
+  const tasks = await buildFetchTasks(
+    { model: { provider: "opencode" } } as unknown as RuntimeContext,
+    "opencode",
+    { ...DEFAULT_CONFIG, color: false },
+    dir,
+  );
+  assert.equal(tasks.length, 0);
+});

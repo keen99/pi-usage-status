@@ -304,7 +304,7 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
   });
 
   function activeCachedSnapshot(provider: string | undefined): UsageSnapshot | undefined {
-    if (provider === "zai") return cache.get("zai:default");
+    if (provider === "zai" || provider === "zai-1m") return cache.get("zai:default");
     if (provider !== "openai-codex") return undefined;
     const credential = readActiveCodexCredential(agentDir);
     return cache.get(`codex:${credential?.accountName ?? "default"}`);
@@ -328,7 +328,7 @@ export async function buildFetchTasks(
   config: UsageStatusConfig,
   agentDir: string,
 ): Promise<FetchTask[]> {
-  const includeZai = config.providerDisplay === "all" || activeProvider === "zai";
+  const includeZai = config.providerDisplay === "all" || activeProvider === "zai" || activeProvider === "zai-1m";
   const includeCodex = config.providerDisplay === "all" || activeProvider === "openai-codex";
   const tasks: FetchTask[] = [];
 
