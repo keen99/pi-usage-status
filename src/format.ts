@@ -96,7 +96,7 @@ export function formatUsageDetails(
       details += ` ${theme ? theme.fg("text", count) : count}`;
     }
     if (config.showResetTimes && limit.resetsAt) {
-      const reset = `(resets ${formatResetAt(limit.resetsAt, now)})`;
+      const reset = `(resets ${formatResetAt(limit.resetsAt, now)} · in ${formatDuration(limit.resetsAt - now)})`;
       details += ` ${theme ? theme.fg("dim", reset) : reset}`;
     }
     lines.push(`  ${label}${details}`);
