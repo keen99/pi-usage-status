@@ -117,10 +117,12 @@ function formatResetAt(timestamp: number, nowTimestamp: number): string {
   const reset = new Date(timestamp);
   const now = new Date(nowTimestamp);
   if (!Number.isFinite(reset.getTime())) return "unknown";
-  const time = `${String(reset.getHours()).padStart(2, "0")}:${String(reset.getMinutes()).padStart(2, "0")}`;
+  const h24 = reset.getHours();
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const time = `${h12}:${String(reset.getMinutes()).padStart(2, "0")} ${h24 < 12 ? "am" : "pm"}`;
   if (reset.toDateString() === now.toDateString()) return time;
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${time} on ${reset.getDate()} ${months[reset.getMonth()]}`;
+  return `${time} ${reset.getDate()} ${months[reset.getMonth()]}`;
 }
 
 /**
