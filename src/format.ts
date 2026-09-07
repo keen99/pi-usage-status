@@ -119,7 +119,10 @@ function formatResetAt(timestamp: number, nowTimestamp: number): string {
   if (!Number.isFinite(reset.getTime())) return "unknown";
   const h24 = reset.getHours();
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  const time = `${h12}:${String(reset.getMinutes()).padStart(2, "0")} ${h24 < 12 ? "am" : "pm"}`;
+  const tz = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+    .formatToParts(reset)
+    .find((part) => part.type === "timeZoneName")?.value ?? "";
+  const time = `${h12}:${String(reset.getMinutes()).padStart(2, "0")} ${h24 < 12 ? "am" : "pm"}${tz ? ` ${tz}` : ""}`;
   if (reset.toDateString() === now.toDateString()) return time;
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${time} ${reset.getDate()} ${months[reset.getMonth()]}`;
