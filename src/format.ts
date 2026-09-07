@@ -96,7 +96,7 @@ export function formatUsageDetails(
       details += ` ${theme ? theme.fg("text", count) : count}`;
     }
     if (config.showResetTimes && limit.resetsAt) {
-      const reset = `(resets ${formatResetAt(limit.resetsAt, now)} · in ${formatDuration(limit.resetsAt - now)})`;
+      const reset = `(${formatResetAt(limit.resetsAt, now)}, ${formatDuration(limit.resetsAt - now)})`;
       details += ` ${theme ? theme.fg("dim", reset) : reset}`;
     }
     lines.push(`  ${label}${details}`);
@@ -122,7 +122,7 @@ function formatResetAt(timestamp: number, nowTimestamp: number): string {
   const tz = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
     .formatToParts(reset)
     .find((part) => part.type === "timeZoneName")?.value ?? "";
-  const time = `${h12}:${String(reset.getMinutes()).padStart(2, "0")} ${h24 < 12 ? "am" : "pm"}${tz ? ` ${tz}` : ""}`;
+  const time = `${h12}:${String(reset.getMinutes()).padStart(2, "0")}${h24 < 12 ? "am" : "pm"}${tz ? ` ${tz}` : ""}`;
   if (reset.toDateString() === now.toDateString()) return time;
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${time} ${reset.getDate()} ${months[reset.getMonth()]}`;
