@@ -1,6 +1,7 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { consumeCodexResetCredit, fetchCodexUsage } from "./providers/codex.ts";
 import { fetchZaiUsage } from "./providers/zai.ts";
+import { fetchOpenAIStatus, isOpenAIStatusTroubled } from "./providers/openai-status.ts";
 import {
   extractBearerToken,
   readActiveCodexCredential,
@@ -203,6 +204,14 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
       if (!sections.length) {
         ctx.ui.notify("No supported provider credentials found", "warning");
         return;
+      }
+
+      const openaiStatus = await fetchOpenAIStatus();
+      if (openaiStatus && isOpenAIStatusTroubled(openaiStatus)) {
+        const parts = [`⚠ OpenAI status: Codex API — ${openaiStatus.codexApi}`];
+        if (openaiStatus.overall !== "unknown") parts.push(`overall ${openaiStatus.overall}`);
+        parts.push("status.openai.com");
+        sections.unshift(parts.join(" · "));
       }
 
       const activeSnapshot = activeCachedSnapshot(provider);
