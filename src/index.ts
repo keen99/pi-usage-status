@@ -27,6 +27,9 @@ export type RuntimeContext = ExtensionContext & {
 export default function usageStatusExtension(pi: ExtensionAPI): void {
   const agentDir = getAgentDir();
   let config = loadConfig(agentDir);
+  // Cross-extension handshake: codex-accounts switches fire no pi event, so it
+  // calls this hook to refresh the footer immediately.
+  (globalThis as Record<string, unknown>).__piUsageStatusRefresh = () => void refresh();
   let currentCtx: RuntimeContext | undefined;
   let currentModel: ModelLike;
   let interval: ReturnType<typeof setInterval> | undefined;
@@ -167,6 +170,7 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
   pi.on("session_shutdown", () => {
     stopTimer();
     refreshSequence += 1;
+    delete (globalThis as Record<string, unknown>).__piUsageStatusRefresh;
     setStatus(undefined);
     currentCtx = undefined;
   });
