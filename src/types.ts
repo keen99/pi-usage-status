@@ -36,6 +36,16 @@ export interface ResetCredits {
   unlimited?: boolean;
 }
 
+/** Z.AI reset-card groups: consumable cards that instantly reset a quota window. */
+export type ResetCardKind = "fiveHour" | "week";
+
+export interface ResetCardGroup {
+  kind: ResetCardKind;
+  available: number;
+  /** Soonest expiry (epoch ms) among available cards, when known. */
+  nearestExpiry?: number;
+}
+
 export interface UsageSnapshot {
   provider: UsageProvider;
   providerLabel: string;
@@ -43,6 +53,8 @@ export interface UsageSnapshot {
   planName?: string;
   limits: UsageLimit[];
   resetCredits?: ResetCredits;
+  /** Z.AI reset cards (weekly / five-hour), grouped by window kind. */
+  resetCards?: ResetCardGroup[];
   /** When the provider access token expires (epoch ms), if known.
    *  Codex JWTs carry exp; shown so users know when /login is needed. */
   tokenExpiresAt?: number;
@@ -59,6 +71,7 @@ export interface UsageStatusConfig {
   showAccountName: boolean;
   showPlan: boolean;
   showResetTimes: boolean;
+  showResetCards: boolean;
   color: boolean;
   suppressCodexAccountsStatus: boolean;
 }

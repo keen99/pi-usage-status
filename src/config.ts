@@ -15,6 +15,7 @@ export const DEFAULT_CONFIG: UsageStatusConfig = {
   showAccountName: true,
   showPlan: true,
   showResetTimes: true,
+  showResetCards: true,
   color: true,
   suppressCodexAccountsStatus: true,
 };
@@ -39,6 +40,7 @@ export function loadConfig(agentDir: string): UsageStatusConfig {
     showAccountName: booleanValue(raw.showAccountName, DEFAULT_CONFIG.showAccountName),
     showPlan: booleanValue(raw.showPlan, DEFAULT_CONFIG.showPlan),
     showResetTimes: booleanValue(raw.showResetTimes, DEFAULT_CONFIG.showResetTimes),
+    showResetCards: booleanValue(raw.showResetCards, DEFAULT_CONFIG.showResetCards),
     color: booleanValue(raw.color, DEFAULT_CONFIG.color),
     suppressCodexAccountsStatus: booleanValue(
       raw.suppressCodexAccountsStatus,

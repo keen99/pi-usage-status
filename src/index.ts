@@ -1,6 +1,11 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { consumeCodexResetCredit, fetchCodexUsage } from "./providers/codex.ts";
-import { fetchZaiUsage } from "./providers/zai.ts";
+import {
+  consumeZaiResetCard,
+  fetchZaiResetCardEntries,
+  fetchZaiUsage,
+  type ZaiResetCardEntry,
+} from "./providers/zai.ts";
 import { fetchOpenAIStatus, isOpenAIStatusTroubled } from "./providers/openai-status.ts";
 import {
   extractBearerToken,
@@ -230,7 +235,7 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("usage-reset", {
-    description: "Redeem one available Codex usage limit reset (optionally pass account name)",
+    description: "Redeem one available usage reset (Codex accounts, or GLM reset cards — GLM path UNTESTED)",
     handler: async (args, ctx) => {
       currentCtx = ctx as RuntimeContext;
       currentModel = ctx.model;
@@ -242,65 +247,103 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
         providerDisplay: "all",
         codexAccountDisplay: "all",
       };
-      const tasks = (await buildFetchTasks(currentCtx, "openai-codex", allConfig, agentDir))
-        .filter((task) => task.provider === "codex");
-      if (!tasks.length) {
-        ctx.ui.notify("No Codex credentials found", "warning");
-        return;
-      }
+      const tasks = await buildFetchTasks(currentCtx, undefined, allConfig, agentDir);
 
-      const snapshots: Array<{ task: FetchTask; snapshot: UsageSnapshot }> = [];
-      for (const task of tasks) {
+      interface RedeemOption {
+        label: string;
+        match: string;
+        redeem: () => Promise<string>;
+      }
+      const options: RedeemOption[] = [];
+
+      const codexTasks = tasks.filter((task) => task.provider === "codex");
+      const codexSnapshots: Array<{ task: FetchTask; snapshot: UsageSnapshot }> = [];
+      for (const task of codexTasks) {
         try {
           const snapshot = await task.fetch();
           cache.set(snapshotKey(snapshot), snapshot);
-          snapshots.push({ task, snapshot });
+          codexSnapshots.push({ task, snapshot });
         } catch {
           // Ignore unavailable accounts for reset flow.
         }
       }
-      if (!snapshots.length) {
-        ctx.ui.notify("Codex usage unavailable", "warning");
+      for (const { task, snapshot } of codexSnapshots) {
+        const count = (snapshot.resetCredits?.available ?? 0) > 0 || snapshot.resetCredits?.unlimited;
+        if (!count) continue;
+        const countBefore = formatResetCreditCount(snapshot);
+        options.push({
+          label: `${task.label} (${countBefore} resets)`,
+          match: task.label.toLowerCase(),
+          redeem: async () => {
+            await task.consumeReset?.();
+            const refreshed = await task.fetch();
+            cache.set(snapshotKey(refreshed), refreshed);
+            return `Redeemed 1 Codex usage reset for ${task.label}. ${formatResetCreditCount(refreshed)} remaining.`;
+          },
+        });
+      }
+
+      const zaiTask = tasks.find((task) => task.provider === "zai");
+      if (zaiTask) {
+        try {
+          const apiKey = readZaiApiKey(agentDir) ?? "";
+          const entries = (await fetchZaiResetCardEntries(apiKey, {
+            timeoutMs: config.requestTimeoutMs,
+          })).filter((entry) => entry.available);
+          if (entries.length) {
+            const summary = formatZaiCardSummary(entries);
+            options.push({
+              label: `GLM (${summary}) — UNTESTED`,
+              match: "glm zai z.ai",
+              redeem: async () => {
+                const confirmed = await ctx.ui.confirm(
+                  "Consume GLM reset card?",
+                  `This will permanently consume 1 GLM ${summary}. ` +
+                    "UNTESTED: the redeem endpoint was reverse-engineered from the z.ai console " +
+                    "and has never been verified live. Cards also expire — soonest goes first.",
+                );
+                if (!confirmed) return "Cancelled — nothing consumed.";
+                const card = soonestExpiringCard(entries);
+                await consumeZaiResetCard(apiKey, card, {
+                  timeoutMs: config.requestTimeoutMs,
+                });
+                // Console waits ~2s before refetching; server lags behind the use call.
+                await new Promise((resolve) => setTimeout(resolve, 2_000));
+                const refreshed = await zaiTask.fetch();
+                cache.set(snapshotKey(refreshed), refreshed);
+                return `Redeemed 1 GLM ${card.kind === "fiveHour" ? "5-hour" : "weekly"} reset card.`;
+              },
+            });
+          }
+        } catch {
+          // GLM card inventory unavailable — skip the option.
+        }
+      }
+
+      if (!options.length) {
+        ctx.ui.notify("No usage resets available (Codex credits or GLM cards)", "info");
         return;
       }
 
-      const available = snapshots.filter(({ snapshot }) => (snapshot.resetCredits?.available ?? 0) > 0 || snapshot.resetCredits?.unlimited);
-      if (!available.length) {
-        ctx.ui.notify("No Codex usage resets available", "info");
-        return;
-      }
-
-      let selected = available[0];
+      let selected = options[0];
       if (accountArg) {
-        const match = available.find(({ task }) => task.label.toLowerCase().includes(accountArg));
+        const match = options.find((option) => option.match.includes(accountArg));
         if (!match) {
-          const names = available.map((s) => s.task.label).join(", ");
-          ctx.ui.notify(`No matching Codex account "${args.trim()}". Available: ${names}`, "warning");
+          const names = options.map((option) => option.match.split(" ")[0]).join(", ");
+          ctx.ui.notify(`No matching option "${args.trim()}". Available: ${names}`, "warning");
           return;
         }
         selected = match;
-      } else if (available.length > 1) {
-        const labels = available.map(({ task, snapshot }) => `${task.label} (${formatResetCreditCount(snapshot)} available)`);
-        const choice = await ctx.ui.select("Redeem reset for which Codex account?", labels);
+      } else if (options.length > 1) {
+        const choice = await ctx.ui.select("Redeem which usage reset?", options.map((option) => option.label));
         if (!choice) return;
-        const index = labels.indexOf(choice);
-        selected = available[index] ?? selected;
+        const index = options.findIndex((option) => option.label === choice);
+        selected = options[index] ?? selected;
       }
 
-      const accountLabel = selected.task.label;
-      const countBefore = formatResetCreditCount(selected.snapshot);
-      const confirmed = await ctx.ui.confirm(
-        "Redeem Codex usage reset?",
-        `This will consume 1 usage limit reset for ${accountLabel}. Available now: ${countBefore}.`,
-      );
-      if (!confirmed) return;
-
       try {
-        await selected.task.consumeReset?.();
-        const snapshot = await selected.task.fetch();
-        cache.set(snapshotKey(snapshot), snapshot);
-        const countAfter = formatResetCreditCount(snapshot);
-        ctx.ui.notify(`Redeemed 1 Codex usage reset for ${accountLabel}. ${countAfter} remaining.`, "info");
+        const message = await selected.redeem();
+        ctx.ui.notify(message, "info");
         const provider = currentModel?.provider ?? ctx.model?.provider;
         const activeSnapshot = activeCachedSnapshot(provider);
         if (activeSnapshot) {
@@ -311,7 +354,7 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`Failed to redeem Codex usage reset: ${message}`, "error");
+        ctx.ui.notify(`Failed to redeem usage reset: ${message}`, "error");
       }
     },
   });
@@ -409,6 +452,27 @@ function formatUnavailableReason(task: FetchTask, now: number): string {
 
 function formatResetCreditCount(snapshot: UsageSnapshot): string {
   return snapshot.resetCredits?.unlimited ? "unlimited" : String(snapshot.resetCredits?.available ?? 0);
+}
+
+function formatZaiCardSummary(entries: ZaiResetCardEntry[]): string {
+  const parts: string[] = [];
+  for (const kind of ["fiveHour", "week"] as const) {
+    const count = entries.filter((entry) => entry.kind === kind).length;
+    if (count > 0) parts.push(`${count}× ${kind === "fiveHour" ? "5-hour" : "weekly"} card${count > 1 ? "s" : ""}`);
+  }
+  return parts.join(", ") || "no cards";
+}
+
+/** Soonest-expiring available card first — matches console priority sorting. */
+function soonestExpiringCard(entries: ZaiResetCardEntry[]): { kind: ZaiResetCardEntry["kind"]; recordId: number } {
+  const sorted = [...entries].sort((left, right) => {
+    if (left.expireTime === undefined && right.expireTime === undefined) return 0;
+    if (left.expireTime === undefined) return 1;
+    if (right.expireTime === undefined) return -1;
+    return left.expireTime - right.expireTime;
+  });
+  const card = sorted[0];
+  return { kind: card.kind, recordId: card.recordId };
 }
 
 function sameCredential(left: CodexCredential, right: CodexCredential | undefined): boolean {

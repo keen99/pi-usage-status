@@ -45,6 +45,8 @@ export function formatUsageStatus(
       text += ` (${formatCount(current)}/${formatCount(limit.total)})`;
     }
     if (config.showResetTimes && limit.resetsAt) text += ` ↻ ${formatDuration(limit.resetsAt - now)}`;
+    const cards = config.showResetCards ? resetCardsForLabel(snapshot.resetCards, limit.label) : undefined;
+    if (cards) text += ` ♻${cards.available}`;
     parts.push(text);
   }
   const text = parts.join(" | ");
@@ -83,6 +85,18 @@ export function formatUsageDetails(
     lines.push(`  ${theme ? theme.fg(color, text) : text}`);
   }
 
+  if (snapshot.resetCards?.some((group) => group.available > 0)) {
+    const rendered = snapshot.resetCards.map((group) => {
+      const label = group.kind === "fiveHour" ? "5h" : "week";
+      const expiry = group.available > 0 && group.nearestExpiry
+        ? ` (exp ${formatResetAt(group.nearestExpiry, now)})`
+        : "";
+      return `${group.available}× ${label}${expiry}`;
+    });
+    const text = `Reset cards: ${rendered.join(", ")}`;
+    lines.push(`  ${theme ? theme.fg("muted", text) : text}`);
+  }
+
   for (const limit of snapshot.limits) {
     const remaining = 100 - clampPercent(limit.usedPercent);
     const rawLabel = detailLabel(limit).padEnd(15);
@@ -102,6 +116,20 @@ export function formatUsageDetails(
     lines.push(`  ${label}${details}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * Match a reset-card group to a quota window label ("5h" -> fiveHour cards,
+ * "week" -> week cards). Returns the group only when cards are available.
+ */
+function resetCardsForLabel(
+  groups: import("./types.ts").ResetCardGroup[] | undefined,
+  label: string,
+): import("./types.ts").ResetCardGroup | undefined {
+  const kind = label === "5h" ? "fiveHour" : label === "week" ? "week" : undefined;
+  if (!kind) return undefined;
+  const group = groups?.find((entry) => entry.kind === kind);
+  return group && group.available > 0 ? group : undefined;
 }
 
 function progressBar(percentRemaining: number, theme?: DetailTheme): string {

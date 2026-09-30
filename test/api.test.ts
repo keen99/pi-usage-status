@@ -270,3 +270,131 @@ test("rejects malformed usage payloads", async () => {
     /no quota windows/,
   );
 });
+
+const RESET_CARDS_URL = "https://api.z.ai/api/biz/customer-package-reset/list?targetType=PERSONAL";
+
+test("Z.AI reset cards parsed with availability and nearest expiry", async () => {
+  const snapshot = await fetchZaiUsage("key", {
+    timeoutMs: 1000,
+    fetchFn: routingFetch({
+      "https://api.z.ai/api/monitor/usage/quota/limit": V2_SHAPE_QUOTA,
+      [RESET_CARDS_URL]: {
+        code: 200,
+        data: {
+          fiveHourResets: [
+            { recordId: 1, expireTime: "2026-10-05 23:59:59", available: true },
+            { recordId: 2, expireTime: "2026-10-01 23:59:59", available: true },
+            { recordId: 3, expireTime: "2026-09-01 23:59:59", available: false },
+          ],
+          weekResets: [{ recordId: 4, expireTime: "2026-10-28 23:59:59", available: true }],
+        },
+      },
+    }),
+  });
+  assert.deepEqual(snapshot.resetCards, [
+    { kind: "fiveHour", available: 2, nearestExpiry: Date.parse("2026-10-01T23:59:59+08:00") },
+    { kind: "week", available: 1, nearestExpiry: Date.parse("2026-10-28T23:59:59+08:00") },
+  ]);
+});
+
+test("reset cards omitted when none available or endpoint fails", async () => {
+  const none = await fetchZaiUsage("key", {
+    timeoutMs: 1000,
+    fetchFn: routingFetch({
+      "https://api.z.ai/api/monitor/usage/quota/limit": V2_SHAPE_QUOTA,
+      [RESET_CARDS_URL]: { code: 200, data: { fiveHourResets: [], weekResets: [] } },
+    }),
+  });
+  assert.equal(none.resetCards, undefined);
+
+  const failed = await fetchZaiUsage("key", {
+    timeoutMs: 1000,
+    fetchFn: routingFetch({
+      "https://api.z.ai/api/monitor/usage/quota/limit": V2_SHAPE_QUOTA,
+    }),
+  });
+  assert.equal(failed.resetCards, undefined);
+});
+
+test("reset card inventory entries parsed with recordIds", async () => {
+  const { fetchZaiResetCardEntries } = await import("../src/providers/zai.ts");
+  const entries = await fetchZaiResetCardEntries("key", {
+    timeoutMs: 1000,
+    fetchFn: jsonFetch({
+      code: 200,
+      data: {
+        fiveHourResets: [
+          { recordId: 11, expireTime: "2026-10-01 23:59:59", available: true },
+          { recordId: 12, expireTime: "2026-09-01 23:59:59", available: false },
+          { recordId: "bad", expireTime: "", available: true },
+        ],
+        weekResets: [{ recordId: 21, expireTime: "2026-10-28 23:59:59", available: true }],
+      },
+    }),
+  });
+  assert.deepEqual(entries, [
+    { kind: "fiveHour", recordId: 11, expireTime: Date.parse("2026-10-01T23:59:59+08:00"), available: true },
+    { kind: "fiveHour", recordId: 12, expireTime: Date.parse("2026-09-01T23:59:59+08:00"), available: false },
+    { kind: "week", recordId: 21, expireTime: Date.parse("2026-10-28T23:59:59+08:00"), available: true },
+  ]);
+});
+
+test("reset card inventory throws on business error", async () => {
+  const { fetchZaiResetCardEntries } = await import("../src/providers/zai.ts");
+  await assert.rejects(
+    fetchZaiResetCardEntries("key", {
+      timeoutMs: 1000,
+      fetchFn: jsonFetch({ code: 401, msg: "unauthorized" }),
+    }),
+    /unauthorized/,
+  );
+});
+
+test("consume reset card posts expected payload (mocked only — UNTESTED live)", async () => {
+  const { consumeZaiResetCard, ZAI_RESET_CARD_USE_URL } = await import("../src/providers/zai.ts");
+  let seen: { url: string; init: RequestInit } | undefined;
+  const captureFetch = (data: unknown): typeof fetch => async (input, init) => {
+    seen = { url: String(input), init: init ?? {} };
+    return new Response(JSON.stringify(data), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  await consumeZaiResetCard(
+    "key",
+    { kind: "fiveHour", recordId: 352383 },
+    { timeoutMs: 1000, fetchFn: captureFetch({ code: 200, success: true, msg: "ok" }), requestId: "req-fixed" },
+  );
+  assert.equal(seen?.url, ZAI_RESET_CARD_USE_URL);
+  assert.equal(seen?.init.method, "POST");
+  assert.deepEqual(JSON.parse(String(seen?.init.body)), {
+    targetType: "PERSONAL",
+    resetType: "FIVE_HOUR",
+    recordId: 352383,
+    requestId: "req-fixed",
+  });
+
+  await consumeZaiResetCard(
+    "key",
+    { kind: "week", recordId: 21 },
+    { timeoutMs: 1000, fetchFn: captureFetch({ code: 200, success: true }) },
+  );
+  const body = JSON.parse(String(seen?.init.body));
+  assert.equal(body.resetType, "WEEK");
+  assert.match(body.requestId, /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|reset-\d+-[0-9a-f]+)$/);
+});
+
+test("consume reset card throws on business failure with msg", async () => {
+  const { consumeZaiResetCard } = await import("../src/providers/zai.ts");
+  await assert.rejects(
+    consumeZaiResetCard("key", { kind: "fiveHour", recordId: 1 }, {
+      timeoutMs: 1000,
+      fetchFn: jsonFetch({ code: 500, msg: "card already used", success: false }),
+    }),
+    /card already used/,
+  );
+  await assert.rejects(
+    consumeZaiResetCard("key", { kind: "fiveHour", recordId: 1 }, {
+      timeoutMs: 1000,
+      fetchFn: jsonFetch({ code: 200, success: false }),
+    }),
+    /reset card use/,
+  );
+});

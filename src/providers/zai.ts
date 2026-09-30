@@ -1,8 +1,11 @@
-import type { UsageLimit, UsageSnapshot } from "../types.ts";
+import type { ResetCardGroup, ResetCardKind, UsageLimit, UsageSnapshot } from "../types.ts";
 import { asObject, fetchJson, normalizeEpoch, numberValue, stringValue, windowLabel } from "./shared.ts";
 
 export const ZAI_USAGE_URL = "https://api.z.ai/api/monitor/usage/quota/limit";
 export const ZAI_SUBSCRIPTION_URL = "https://api.z.ai/api/biz/subscription/list";
+export const ZAI_RESET_CARDS_URL =
+  "https://api.z.ai/api/biz/customer-package-reset/list?targetType=PERSONAL";
+export const ZAI_RESET_CARD_USE_URL = "https://api.z.ai/api/biz/customer-package-reset/use";
 
 /**
  * Z.AI quota unit values observed in the wild.
@@ -30,9 +33,10 @@ export async function fetchZaiUsage(
 ): Promise<UsageSnapshot> {
 	// Subscription list is authoritative for plan generation (V1/V2/V3) but is
 	// best-effort: on failure we fall back to legacy quota-shape inference.
-	const [data, subscription] = await Promise.all([
+	const [data, subscription, resetCards] = await Promise.all([
 		fetchJson(ZAI_USAGE_URL, { headers: { Authorization: `Bearer ${apiKey}` } }, options),
 		fetchZaiSubscription(apiKey, options),
+		fetchZaiResetCards(apiKey, options),
 	]);
 	const root = asObject(data);
 	if (numberValue(root.code) !== 200) throw new Error(`Z.AI usage API returned code ${String(root.code)}`);
@@ -60,7 +64,136 @@ export async function fetchZaiUsage(
 		providerLabel: "GLM",
 		...(planName ? { planName } : {}),
 		limits,
+		...(resetCards && resetCards.some((group) => group.available > 0) ? { resetCards } : {}),
 	};
+}
+
+/**
+ * Z.AI server timestamps ("YYYY-MM-DD HH:mm:ss") are Beijing time (UTC+8);
+ * parse with an explicit offset instead of the caller's local zone.
+ */
+export function parseZaiTimestamp(value: string | undefined): number | undefined {
+	if (!value) return undefined;
+	const normalized = value.trim().replace(" ", "T");
+	if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(normalized)) return undefined;
+	const ms = new Date(`${normalized}+08:00`).getTime();
+	return Number.isFinite(ms) ? ms : undefined;
+}
+
+const RESET_CARD_SOURCES: Array<{ kind: ResetCardKind; key: string }> = [
+	{ kind: "fiveHour", key: "fiveHourResets" },
+	{ kind: "week", key: "weekResets" },
+];
+
+/**
+ * Fetch available reset cards (weekly / five-hour). Best-effort: any failure
+ * returns undefined so quota status still renders. Expired cards arrive with
+ * available:false and are ignored — the console UI lists them separately for
+ * 7 days, we only surface what can actually be spent.
+ */
+async function fetchZaiResetCards(
+	apiKey: string,
+	options: { timeoutMs: number; fetchFn?: typeof fetch },
+): Promise<ResetCardGroup[] | undefined> {
+	try {
+		const entries = await fetchZaiResetCardEntries(apiKey, options);
+		return RESET_CARD_SOURCES.map(({ kind }) => {
+			const rows = entries.filter((entry) => entry.kind === kind && entry.available);
+			let nearestExpiry: number | undefined;
+			for (const entry of rows) {
+				if (entry.expireTime !== undefined && (nearestExpiry === undefined || entry.expireTime < nearestExpiry)) {
+					nearestExpiry = entry.expireTime;
+				}
+			}
+			return { kind, available: rows.length, ...(nearestExpiry !== undefined ? { nearestExpiry } : {}) };
+		});
+	} catch {
+		return undefined;
+	}
+}
+
+export interface ZaiResetCardEntry {
+	kind: ResetCardKind;
+	recordId: number;
+	/** Expiry (epoch ms, Beijing-time source string parsed at +08:00). */
+	expireTime?: number;
+	available: boolean;
+}
+
+/**
+ * Raw reset-card inventory including recordIds needed to redeem. Throws on
+ * transport/API failure (redeem flow surfaces errors); callers that only
+ * want display data should use fetchZaiResetCards instead.
+ */
+export async function fetchZaiResetCardEntries(
+	apiKey: string,
+	options: { timeoutMs: number; fetchFn?: typeof fetch },
+): Promise<ZaiResetCardEntry[]> {
+	const data = await fetchJson(
+		ZAI_RESET_CARDS_URL,
+		{ headers: { Authorization: `Bearer ${apiKey}` } },
+		options,
+	);
+	const root = asObject(data);
+	if (numberValue(root.code) !== 200) {
+		throw new Error(stringValue(root.msg) ?? `Z.AI reset card list returned code ${String(root.code)}`);
+	}
+	const body = asObject(root.data);
+	const entries: ZaiResetCardEntry[] = [];
+	for (const { kind, key } of RESET_CARD_SOURCES) {
+		const rows = Array.isArray(body[key]) ? body[key] : [];
+		for (const row of rows) {
+			const entry = asObject(row);
+			const recordId = numberValue(entry.recordId);
+			if (recordId === undefined) continue;
+			entries.push({
+				kind,
+				recordId,
+				...(parseZaiTimestamp(stringValue(entry.expireTime)) !== undefined
+					? { expireTime: parseZaiTimestamp(stringValue(entry.expireTime)) }
+					: {}),
+				available: entry.available === true,
+			});
+		}
+	}
+	return entries;
+}
+
+/**
+ * CONSUME a reset card. UNTESTED against the live API: endpoint, payload, and
+ * success contract were reverse-engineered from the z.ai console JS bundle
+ * and never exercised by a real redemption. One-way action — a successful
+ * call permanently spends the card.
+ *
+ * Console contract: POST {targetType:"PERSONAL", resetType:"FIVE_HOUR"|"WEEK",
+ * recordId, requestId} with a client-generated requestId (UUID); success is
+ * code 200 AND success === true; non-2xx business codes carry `msg`.
+ */
+export async function consumeZaiResetCard(
+	apiKey: string,
+	target: { kind: ResetCardKind; recordId: number },
+	options: { timeoutMs: number; fetchFn?: typeof fetch; requestId?: string },
+): Promise<void> {
+	const body = {
+		targetType: "PERSONAL",
+		resetType: target.kind === "fiveHour" ? "FIVE_HOUR" : "WEEK",
+		recordId: target.recordId,
+		requestId: options.requestId ?? globalThis.crypto?.randomUUID?.()
+			?? `reset-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+	};
+	const data = await fetchJson(
+		ZAI_RESET_CARD_USE_URL,
+		{
+			method: "POST",
+			headers: { Authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+			body: JSON.stringify(body),
+		},
+		options,
+	);
+	const root = asObject(data);
+	if (numberValue(root.code) !== 200 || root.success !== true) {
+		throw new Error(stringValue(root.msg) ?? `Z.AI reset card use returned code ${String(root.code)}`);
+	}
 }
 
 interface ZaiSubscriptionInfo {
