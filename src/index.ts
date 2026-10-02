@@ -16,6 +16,7 @@ import {
 import { loadConfig } from "./config.ts";
 import { formatDuration, formatUsageDetails, formatUsageStatus, snapshotKey } from "./format.ts";
 import type { CodexCredential, UsageSnapshot, UsageStatusConfig } from "./types.ts";
+import { ACCOUNT_CHANGED_EVENT } from "./codex-session-state.ts";
 
 const STATUS_KEY = "usage-status";
 const REPLACED_STATUS_KEYS = ["usage-bars", "codex-usage", "glm-usage"];
@@ -29,12 +30,14 @@ export type RuntimeContext = ExtensionContext & {
   };
 };
 
-export default function usageStatusExtension(pi: ExtensionAPI): void {
-  const agentDir = getAgentDir();
+export default function usageStatusExtension(pi: ExtensionAPI, dependencies: { agentDir?: string } = {}): void {
+  const agentDir = dependencies.agentDir ?? getAgentDir();
   let config = loadConfig(agentDir);
-  // Cross-extension handshake: codex-accounts switches fire no pi event, so it
-  // calls this hook to refresh the footer immediately.
-  (globalThis as Record<string, unknown>).__piUsageStatusRefresh = () => void refresh();
+  // Keep the existing guarded hook for older codex-accounts versions. New
+  // versions also publish the standard shared event bus notification.
+  const refreshHook = () => { void refresh().catch(() => undefined); };
+  (globalThis as Record<string, unknown>).__piUsageStatusRefresh = refreshHook;
+  const unsubscribeAccounts = pi.events?.on(ACCOUNT_CHANGED_EVENT, () => refreshHook());
   let currentCtx: RuntimeContext | undefined;
   let currentModel: ModelLike;
   let interval: ReturnType<typeof setInterval> | undefined;
@@ -101,6 +104,16 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
       return;
     }
 
+    // Replace the previous account label before network work. A slow quota
+    // request must not leave the OLD account's usage in the footer after switch.
+    if (sequence === refreshSequence && ctx === currentCtx) {
+      const theme = config.color ? ctx.ui.theme : undefined;
+      setStatus(tasks.map((task) => {
+        const cached = cache.get(task.key);
+        return cached ? formatUsageStatus(cached, config, { theme, stale: true })
+          : `${task.label} | fetching usage`;
+      }).join(" || "));
+    }
     const results = await Promise.all(
       tasks.map(async (task) => {
         try {
@@ -175,7 +188,10 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
   pi.on("session_shutdown", () => {
     stopTimer();
     refreshSequence += 1;
-    delete (globalThis as Record<string, unknown>).__piUsageStatusRefresh;
+    unsubscribeAccounts?.();
+    if ((globalThis as Record<string, unknown>).__piUsageStatusRefresh === refreshHook) {
+      delete (globalThis as Record<string, unknown>).__piUsageStatusRefresh;
+    }
     setStatus(undefined);
     currentCtx = undefined;
   });
@@ -362,7 +378,7 @@ export default function usageStatusExtension(pi: ExtensionAPI): void {
   function activeCachedSnapshot(provider: string | undefined): UsageSnapshot | undefined {
     if (provider === "zai" || provider === "zai-1m") return cache.get("zai:default");
     if (provider !== "openai-codex") return undefined;
-    const credential = readActiveCodexCredential(agentDir);
+    const credential = readActiveCodexCredential(agentDir, currentCtx?.sessionManager);
     return cache.get(`codex:${credential?.accountName ?? "default"}`);
   }
 }
@@ -401,7 +417,7 @@ export async function buildFetchTasks(
   }
 
   if (includeCodex) {
-    const activeCredential = readActiveCodexCredential(agentDir);
+    const activeCredential = readActiveCodexCredential(agentDir, ctx.sessionManager);
     const credentials = config.codexAccountDisplay === "all"
       ? readAllCodexCredentials(agentDir)
       : [activeCredential].filter((value): value is CodexCredential => !!value);
@@ -433,7 +449,10 @@ async function readRuntimeCodexToken(ctx: RuntimeContext): Promise<string | unde
     const result = await ctx.modelRegistry.getApiKeyAndHeaders?.(ctx.model);
     const record = result && typeof result === "object" ? (result as Record<string, unknown>) : undefined;
     if (record?.ok === false) return undefined;
-    return extractBearerToken(result);
+    const token = extractBearerToken(result);
+    // Fail-closed account errors deliberately inject a non-token sentinel.
+    // Never use that sentinel to fetch quota or label another account's data.
+    return token === "pi-codex-accounts-refresh-failed" ? undefined : token;
   } catch {
     return undefined;
   }

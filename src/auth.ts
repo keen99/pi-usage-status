@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CodexCredential, StoredCredential } from "./types.ts";
+import { restoreAccountSelection, type StateEntry } from "./codex-session-state.ts";
 
 interface CodexAccountsFile {
+  default?: unknown;
   active?: unknown;
   accounts?: unknown;
 }
@@ -13,13 +15,18 @@ export function readZaiApiKey(agentDir: string): string | undefined {
   return nonEmptyString(zai?.key) ?? nonEmptyString(zai?.access);
 }
 
-export function readActiveCodexCredential(agentDir: string): CodexCredential | undefined {
+export function readActiveCodexCredential(
+  agentDir: string,
+  session?: { getBranch(): readonly StateEntry[] },
+): CodexCredential | undefined {
   const accounts = readCodexAccounts(agentDir);
-  if (accounts.active) {
-    const credential = accounts.accounts[accounts.active];
-    if (credential) {
-      return { ...credential, accountName: accounts.active, source: "codex-accounts" };
-    }
+  const selection = session ? restoreAccountSelection(session.getBranch()) : undefined;
+  const name = selection ? selection.accountName : accounts.active;
+  if (name) {
+    const credential = accounts.accounts[name];
+    if (credential) return { ...credential, accountName: name, source: "codex-accounts" };
+    // Missing explicit selection must never silently display another account.
+    if (selection) return undefined;
   }
   return readPiAuthCodexCredential(agentDir);
 }
@@ -43,7 +50,11 @@ export function readCodexAccounts(agentDir: string): {
   accounts: Record<string, StoredCredential>;
 } {
   const raw = readObject(join(agentDir, "codex-accounts.json")) as CodexAccountsFile | undefined;
-  const active = nonEmptyString(raw?.active);
+  // `active` is legacy shared default. Session selection lives in pi's session,
+  // not in this credentials file. Explicit null default disables legacy fallback.
+  const active = raw && Object.hasOwn(raw, "default")
+    ? nonEmptyString(raw.default)
+    : nonEmptyString(raw?.active);
   const rawAccounts = asObject(raw?.accounts);
   const accounts: Record<string, StoredCredential> = {};
   for (const [name, value] of Object.entries(rawAccounts ?? {})) {
