@@ -39,7 +39,8 @@
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "test:matrix": "node test/release-matrix.mjs"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {

@@ -1,4 +1,6 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { consumeCodexResetCredit, fetchCodexUsage } from "./providers/codex.ts";
 import {
   consumeZaiResetCard,
@@ -32,6 +34,14 @@ export type RuntimeContext = ExtensionContext & {
 
 export default function usageStatusExtension(pi: ExtensionAPI, dependencies: { agentDir?: string } = {}): void {
   const agentDir = dependencies.agentDir ?? getAgentDir();
+  if (process.env.USAGE_STATUS_DEBUG === "1") {
+    try {
+      mkdirSync(agentDir, { recursive: true });
+      writeFileSync(join(agentDir, "usage-status-loaded.json"), JSON.stringify({ loaded: true, agentDir }) + "\n");
+    } catch {
+      /* best-effort marker */
+    }
+  }
   let config = loadConfig(agentDir);
   // Keep the existing guarded hook for older codex-accounts versions. New
   // versions also publish the standard shared event bus notification.

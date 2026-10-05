@@ -1,5 +1,9 @@
 # pi-usage-status
 
+![CI](https://github.com/keen99/pi-usage-status/actions/workflows/ci.yml/badge.svg)
+![release-watch](https://github.com/keen99/pi-usage-status/actions/workflows/release-watch.yml/badge.svg)
+[![pi tested](https://img.shields.io/github/v/release/keen99/pi-usage-status?label=pi%20tested%200.75.0%20%E2%86%92)](https://github.com/keen99/pi-usage-status/releases)
+
 Readable subscription quota status for [pi](https://github.com/earendil-works/pi-mono).
 Shows only the active model provider by default.
 
